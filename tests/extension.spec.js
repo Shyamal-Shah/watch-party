@@ -17,7 +17,7 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
   // Pregrant the test relay; production still asks via Chrome's permission prompt.
   manifest.host_permissions = [...manifest.host_permissions, 'http://127.0.0.1/*'];
   await fs.writeFile(path.join(extension, 'manifest.json'), JSON.stringify(manifest));
-  for (const file of ['shared.js', 'player-controls.js', 'netflix-bridge.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', 'extension', file), path.join(extension, file));
+  for (const file of ['shared.js', 'player-controls.js', 'netflix-bridge.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css', 'call-icon.svg']) await fs.copyFile(path.join(__dirname, '..', 'extension', file), path.join(extension, file));
   const video = await fs.readFile(path.join(__dirname, 'fixtures/video.webm'));
   const netflixFixture = await fs.readFile(path.join(__dirname, 'fixtures/netflix-player.js'), 'utf8');
   const identities = ['0'.repeat(64), '1'.repeat(64)].map(value => {
@@ -131,13 +131,54 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
     await guestCall.getByRole('button', { name: 'Turn camera on', exact: true }).click();
     await expect.poll(() => guestCall.locator('#remote-video').evaluate(v => v.videoWidth)).toBeGreaterThan(0);
     await expect.poll(() => hostCall.locator('#remote-video').evaluate(v => v.videoWidth)).toBeGreaterThan(0);
+    if (hostOffers) {
+      // Resize a live call. The video should expand on desktop, the self-preview
+      // should stay inside it, and every toolbar control should remain reachable.
+      for (const size of [{ width: 300, height: 640 }, { width: 430, height: 720 }, { width: 800, height: 600 }, { width: 1440, height: 900 }, { width: 2560, height: 1440 }]) {
+        await hostCall.setViewportSize(size);
+        await hostCall.evaluate(() => window.scrollTo(0, 0));
+        const layout = await hostCall.evaluate(() => {
+          const rect = selector => { const box = document.querySelector(selector).getBoundingClientRect(); return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, height: box.height }; };
+          return { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
+            stage: rect('.call-stage'), preview: rect('.local-tile'),
+            buttons: [...document.querySelectorAll('#call-controls button')].map(button => {
+              const box = button.getBoundingClientRect(); return { x: box.x, right: box.right, bottom: box.bottom, icons: button.querySelectorAll('svg use').length, label: button.getAttribute('aria-label') };
+            }) };
+        });
+        expect(layout.scrollWidth).toBeLessThanOrEqual(size.width);
+        expect(layout.preview.x).toBeGreaterThanOrEqual(layout.stage.x);
+        expect(layout.preview.right).toBeLessThanOrEqual(layout.stage.right);
+        expect(layout.preview.bottom).toBeLessThanOrEqual(layout.stage.bottom);
+        for (const button of layout.buttons) {
+          expect(button.x).toBeGreaterThanOrEqual(0); expect(button.right).toBeLessThanOrEqual(size.width);
+          expect(button.bottom).toBeLessThanOrEqual(size.height); expect(button.icons).toBe(1); expect(button.label).toBeTruthy();
+        }
+        if (size.width >= 1000) {
+          expect(layout.stage.width).toBeGreaterThan(size.width * 0.65);
+          expect(layout.scrollHeight).toBeLessThanOrEqual(size.height + 1);
+        }
+        if (size.width === 430) await hostCall.screenshot({ path: 'test-results/call-compact.png' });
+        if (size.width === 1440) await hostCall.screenshot({ path: 'test-results/call-desktop.png' });
+      }
+      await hostCall.getByRole('button', { name: 'Open device settings', exact: true }).click();
+      await expect(hostCall.locator('#device-settings')).toHaveAttribute('open', '');
+      await expect(hostCall.locator('#audio-device')).toBeVisible();
+      await expect(hostCall.getByRole('button', { name: 'Close device settings' })).toHaveAttribute('aria-expanded', 'true');
+      expect(await hostCall.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(2560);
+      await hostCall.keyboard.press('Escape');
+      await expect(hostCall.getByRole('button', { name: 'Open device settings' })).toHaveAttribute('aria-expanded', 'false');
+      await hostCall.setViewportSize({ width: 430, height: 720 });
+    }
     await hostCall.getByRole('button', { name: 'Mute mic', exact: true }).click();
     await expect(guestCall.locator('#remote-media')).toContainText('Mic off');
     expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject.getAudioTracks().length)).toBe(0);
     await guestCall.getByRole('button', { name: 'Mute speakers', exact: true }).click();
     expect(await guestCall.locator('#remote-video').evaluate(v => v.muted)).toBe(true);
+    await expect(guestCall.locator('#speaker svg use')).toHaveAttribute('href', '#icon-speaker-off');
     await hostCall.getByRole('button', { name: 'Turn camera off', exact: true }).click();
     await expect(guestCall.locator('#remote-placeholder')).toBeVisible();
+    await expect(hostCall.locator('#mic svg use')).toHaveAttribute('href', '#icon-mic-off');
+    await expect(hostCall.locator('#camera svg use')).toHaveAttribute('href', '#icon-camera-off');
     expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject.getVideoTracks().length)).toBe(0);
     await guestCall.close();
     await expect.poll(() => [...relay.rooms.get('ABC123').members.values()].find(m => m.name === 'Guest').call).toBeNull();

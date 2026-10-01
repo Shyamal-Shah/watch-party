@@ -16,7 +16,7 @@ FILES = (
     "content.js", "content.css",
     "netflix-bridge.js", "player-controls.js",
     "popup.html", "popup.js", "popup.css",
-    "call.html", "call.js", "call.css", "INSTALL.txt",
+    "call.html", "call.js", "call.css", "call-icon.svg", "INSTALL.txt",
 )
 
 

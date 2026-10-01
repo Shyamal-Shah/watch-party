@@ -30,6 +30,13 @@ async function request(packet) {
   if (response?.rpcError) throw new Error(response.rpcError);
   return response;
 }
+function controlLabel(id, label, icon) {
+  const button = $(id);
+  button.querySelector('.control-label').textContent = label;
+  button.querySelector('use').setAttribute('href', `#icon-${icon}`);
+  button.setAttribute('aria-label', label);
+  button.title = label;
+}
 function render() {
   const friend = other();
   const online = view?.status === 'connected';
@@ -39,18 +46,18 @@ function render() {
   $('join-voice').disabled = $('listen').disabled = !devicesReady || !online || !view?.room?.capabilities?.voiceVideo;
   $('mic').disabled = $('camera').disabled = mediaBusy || joining || !wanted;
   $('retry-call').disabled = !online || joining;
-  $('mic').textContent = live('audio') ? 'Mute mic' : 'Turn mic on';
-  $('camera').textContent = live('video') ? 'Turn camera off' : 'Turn camera on';
+  controlLabel('mic', live('audio') ? 'Mute mic' : 'Turn mic on', live('audio') ? 'mic' : 'mic-off');
+  controlLabel('camera', live('video') ? 'Turn camera off' : 'Turn camera on', live('video') ? 'camera' : 'camera-off');
   $('mic').setAttribute('aria-pressed', String(live('audio')));
   $('camera').setAttribute('aria-pressed', String(live('video')));
   $('speaker').setAttribute('aria-pressed', String(speakersMuted));
-  $('speaker').textContent = speakersMuted ? 'Unmute speakers' : 'Mute speakers';
+  controlLabel('speaker', speakersMuted ? 'Unmute speakers' : 'Mute speakers', speakersMuted ? 'speaker-off' : 'speaker');
   $('local-media').textContent = `Microphone ${live('audio') ? 'on' : 'off'} · Camera ${live('video') ? 'on' : 'off'}`;
   $('local-placeholder').hidden = live('video');
   $('remote-name').textContent = friend?.name || 'Your friend';
   $('remote-media').textContent = friend?.call ? `${friend.call.mic ? 'Mic on' : 'Mic off'} · ${friend.call.camera ? 'Camera on' : 'Camera off'}` : 'Not in call';
   $('remote-placeholder').hidden = !!friend?.call?.camera && peer?.pc.connectionState === 'connected';
-  $('remote-placeholder').textContent = friend?.call ? 'Camera off' : 'Waiting for your friend';
+  $('remote-placeholder-text').textContent = friend?.call ? 'Camera off' : 'Waiting for your friend';
   let status = 'Join voice or listen only. You can turn on your camera during the call.';
   if (!view?.party) status = 'Your party ended. Microphone and camera are off.';
   else if (!view.room?.capabilities?.voiceVideo && online) status = 'Update the relay to enable voice and video calls.';
@@ -61,6 +68,8 @@ function render() {
   else if (wanted && peer?.failed) status = 'Call connection failed';
   else if (wanted) status = 'Connecting call…';
   $('call-status').textContent = status;
+  $('connection-dot').dataset.state = wanted && online && peer?.pc.connectionState === 'connected' ? 'connected' : peer?.failed ? 'failed' : 'waiting';
+  document.querySelector('.local-tile').title = $('local-media').textContent;
   $('call-message').textContent = message;
   for (const kind of ['audio', 'video', 'output']) {
     $(`${kind}-device`).disabled = !devicesReady || mediaBusy || joining || outputBusy || (kind === 'output' && !hasOutputSelection);
@@ -310,7 +319,11 @@ async function makePeer(friend) {
   };
   pc.onconnectionstatechange = () => {
     if (peer !== ctx) return;
-    if (pc.connectionState === 'connected') { clearTimeout(ctx.deadline); clearTimeout(ctx.retryTimer); message = ''; ctx.failed = false; }
+    if (pc.connectionState === 'connected') {
+      clearTimeout(ctx.deadline); clearTimeout(ctx.retryTimer); message = ''; ctx.failed = false;
+      showQuality('unknown', 'Measuring call quality…', '');
+      sampleQuality(ctx);
+    }
     if (pc.connectionState === 'failed') failed(ctx);
     if (pc.connectionState === 'disconnected') {
       clearTimeout(ctx.retryTimer);
@@ -404,6 +417,23 @@ $('speaker').onclick = () => { speakersMuted = !speakersMuted; $('remote-video')
 $('hangup').onclick = () => endCall('You left the call. The watch party continues.');
 $('retry-call').onclick = () => { attempts = 0; message = ''; register(); };
 $('enable-audio').onclick = async () => { try { await $('remote-video').play(); $('enable-audio').hidden = true; } catch { message = 'Chrome could not play audio. Check your sound settings.'; render(); } };
+const deviceSettings = $('device-settings');
+function reflectDevices() {
+  document.body.classList.toggle('devices-open', deviceSettings.open);
+  $('device-toggle').setAttribute('aria-expanded', String(deviceSettings.open));
+  $('device-toggle').setAttribute('aria-label', deviceSettings.open ? 'Close device settings' : 'Open device settings');
+}
+deviceSettings.addEventListener('toggle', reflectDevices);
+$('device-toggle').onclick = () => {
+  deviceSettings.open = !deviceSettings.open;
+  reflectDevices();
+  if (deviceSettings.open && window.innerWidth < 1000) deviceSettings.scrollIntoView({ block: 'nearest' });
+};
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && deviceSettings.open) {
+    deviceSettings.open = false; reflectDevices(); $('device-toggle').focus();
+  }
+});
 for (const kind of ['audio', 'video', 'output']) {
   $(`${kind}-device`).onchange = event => selectDevice(kind, event.target.value);
 }

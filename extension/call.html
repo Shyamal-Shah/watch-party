@@ -1,44 +1,77 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Watch Party call</title><link rel="stylesheet" href="call.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Watch Party call</title><link rel="icon" href="call-icon.svg" type="image/svg+xml"><link rel="stylesheet" href="call.css"></head>
 <body>
-<main>
-  <header><span class="mark">✦</span><div><h1>Watch Party call</h1><p id="room-label">Two people. One movie night.</p></div></header>
-  <p id="call-status" role="status" aria-live="polite">Join a party to start a call.</p>
-  <div id="quality" hidden><span id="quality-label">Measuring call quality…</span><small id="quality-metrics"></small></div>
-  <section class="tile remote-tile" aria-label="Your friend">
-    <video id="remote-video" autoplay playsinline></video>
-    <div id="remote-placeholder" class="placeholder">Waiting for your friend</div>
-    <div class="caption"><span id="remote-name">Your friend</span><span id="remote-media"></span></div>
+<svg class="icon-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="icon-spark" viewBox="0 0 24 24"><path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8Z"/></symbol>
+  <symbol id="icon-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></symbol>
+  <symbol id="icon-mic-off" viewBox="0 0 24 24"><path d="m3 3 18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.6-1.5M5 10v2a7 7 0 0 0 12 4.9M19 10v2c0 .7-.1 1.4-.3 2M12 19v3m-4 0h8"/></symbol>
+  <symbol id="icon-camera" viewBox="0 0 24 24"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 10 6-4v12l-6-4"/></symbol>
+  <symbol id="icon-camera-off" viewBox="0 0 24 24"><path d="m3 3 18 18M16 10l6-4v12l-4-2.7M6 5h7a3 3 0 0 1 3 3v4M16 16a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V8c0-.8.3-1.6.9-2.1"/></symbol>
+  <symbol id="icon-speaker" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+  <symbol id="icon-speaker-off" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5ZM16 9l6 6m0-6-6 6"/></symbol>
+  <symbol id="icon-headphones" viewBox="0 0 24 24"><path d="M3 14v-3a9 9 0 0 1 18 0v3"/><rect x="2" y="12" width="5" height="9" rx="2"/><rect x="17" y="12" width="5" height="9" rx="2"/></symbol>
+  <symbol id="icon-retry" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.6 7a8 8 0 0 1 13.2-2L20 7M4 17l1.2 2A8 8 0 0 0 18.4 17"/></symbol>
+  <symbol id="icon-hangup" viewBox="0 0 24 24"><path d="M3 14a15 15 0 0 1 18 0l1 1-3 4-4-2v-4a10 10 0 0 0-6 0v4l-4 2-3-4Z"/></symbol>
+  <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 4v16M12 4v16M20 4v16"/><path d="M1 8h6M9 16h6M17 10h6"/></symbol>
+  <symbol id="icon-signal" viewBox="0 0 24 24"><path d="M4 19v-3m5 3v-7m5 7V8m5 11V4"/></symbol>
+  <symbol id="icon-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+</defs></svg>
+<main class="call-app">
+  <header class="call-header">
+    <div class="brand"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#icon-spark"/></svg></span><div><h1>Watch Party call</h1><p id="room-label">Two people. One movie night.</p></div></div>
+    <button id="device-toggle" class="settings-button" aria-controls="device-settings" aria-expanded="false" aria-label="Open device settings" title="Microphone, camera and speakers"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span>Devices</span></button>
+  </header>
+  <section class="connection-bar" aria-label="Call connection">
+    <div class="connection-status"><span id="connection-dot" class="status-dot" aria-hidden="true"></span><p id="call-status" role="status" aria-live="polite">Join a party to start a call.</p></div>
+    <div id="quality" hidden><svg class="icon" aria-hidden="true"><use href="#icon-signal"/></svg><div><span id="quality-label">Measuring call quality…</span><small id="quality-metrics"></small></div></div>
   </section>
-  <section class="tile local-tile" aria-label="Your preview">
-    <video id="local-video" autoplay playsinline muted></video>
-    <div id="local-placeholder" class="placeholder">Your camera is off</div>
-    <div class="caption"><span>You</span><span id="local-media">Microphone off · Camera off</span></div>
-  </section>
-  <div id="join-controls" class="controls">
-    <button id="join-voice" class="primary">Join voice call</button>
-    <button id="listen">Listen only</button>
+  <div class="call-body">
+    <section class="call-stage" aria-label="Call video">
+      <section class="tile remote-tile" aria-label="Your friend">
+        <video id="remote-video" autoplay playsinline></video>
+        <div id="remote-placeholder" class="placeholder"><div class="avatar"><svg class="icon" aria-hidden="true"><use href="#icon-person"/></svg></div><strong id="remote-placeholder-text">Waiting for your friend</strong><span>Your movie night, together</span></div>
+        <div class="caption"><span class="participant-name"><span class="status-dot" aria-hidden="true"></span><span id="remote-name">Your friend</span></span><span id="remote-media" class="media-label"></span></div>
+      </section>
+      <section class="tile local-tile" aria-label="Your preview">
+        <video id="local-video" autoplay playsinline muted></video>
+        <div id="local-placeholder" class="placeholder"><svg class="icon" aria-hidden="true"><use href="#icon-camera-off"/></svg><span>Your camera is off</span></div>
+        <div class="caption"><span>You</span><span id="local-media">Microphone off · Camera off</span></div>
+      </section>
+    </section>
+    <aside class="devices-panel">
+      <details id="device-settings">
+        <summary><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span>Microphone, camera &amp; speakers</span><svg class="icon chevron" aria-hidden="true"><use href="#icon-chevron"/></svg></summary>
+        <div class="device-fields">
+          <label for="audio-device"><svg class="icon" aria-hidden="true"><use href="#icon-mic"/></svg>Microphone</label><select id="audio-device"><option value="">System default</option></select>
+          <label for="video-device"><svg class="icon" aria-hidden="true"><use href="#icon-camera"/></svg>Camera</label><select id="video-device"><option value="">System default</option></select>
+          <label for="output-device"><svg class="icon" aria-hidden="true"><use href="#icon-speaker"/></svg>Speakers</label><select id="output-device"><option value="">System default</option></select>
+          <button id="choose-output" hidden><svg class="icon" aria-hidden="true"><use href="#icon-headphones"/></svg><span>Choose another speaker</span></button>
+          <p id="device-help" class="help">Device names appear after you allow access. Selecting an input keeps it off until you enable it.</p>
+          <p id="device-message" role="status" class="help"></p>
+        </div>
+      </details>
+    </aside>
   </div>
-  <div id="call-controls" class="controls" hidden>
-    <button id="mic" aria-pressed="false">Turn mic on</button>
-    <button id="camera" aria-pressed="false">Turn camera on</button>
-    <button id="speaker" aria-pressed="false">Mute speakers</button>
-    <button id="retry-call">Reconnect call</button>
-    <button id="hangup" class="danger">Leave call</button>
-  </div>
-  <button id="enable-audio" class="primary" hidden>Play your friend’s audio</button>
-  <details id="device-settings">
-    <summary>Microphone, camera &amp; speakers</summary>
-    <label for="audio-device">Microphone</label><select id="audio-device"><option value="">System default</option></select>
-    <label for="video-device">Camera</label><select id="video-device"><option value="">System default</option></select>
-    <label for="output-device">Speakers</label><select id="output-device"><option value="">System default</option></select>
-    <button id="choose-output" hidden>Choose another speaker</button>
-    <p id="device-help" class="help">Device names appear after you allow access. Selecting an input keeps it off until you enable it.</p>
-    <p id="device-message" role="status" class="help"></p>
-  </details>
-  <p id="call-message" role="alert"></p>
-  <p class="help">Your microphone and camera stay off until you choose to enable them. Closing this window ends your call; the watch party continues.</p>
+  <footer class="call-footer">
+    <div class="toolbar" aria-label="Call controls">
+      <div id="join-controls" class="controls join-controls">
+        <button id="join-voice" class="primary"><svg class="icon" aria-hidden="true"><use href="#icon-mic"/></svg><span>Join voice call</span></button>
+        <button id="listen"><svg class="icon" aria-hidden="true"><use href="#icon-headphones"/></svg><span>Listen only</span></button>
+      </div>
+      <div id="call-controls" class="controls" hidden>
+        <button id="mic" aria-pressed="false" aria-label="Turn mic on"><svg class="icon" aria-hidden="true"><use href="#icon-mic-off"/></svg><span class="control-label">Turn mic on</span><span class="compact-label" aria-hidden="true">Mic</span></button>
+        <button id="camera" aria-pressed="false" aria-label="Turn camera on"><svg class="icon" aria-hidden="true"><use href="#icon-camera-off"/></svg><span class="control-label">Turn camera on</span><span class="compact-label" aria-hidden="true">Camera</span></button>
+        <button id="speaker" aria-pressed="false" aria-label="Mute speakers"><svg class="icon" aria-hidden="true"><use href="#icon-speaker"/></svg><span class="control-label">Mute speakers</span><span class="compact-label" aria-hidden="true">Sound</span></button>
+        <button id="retry-call" aria-label="Reconnect call" title="Reconnect call"><svg class="icon" aria-hidden="true"><use href="#icon-retry"/></svg><span class="control-label">Reconnect call</span><span class="compact-label" aria-hidden="true">Retry</span></button>
+        <button id="hangup" class="danger" aria-label="Leave call" title="Leave call"><svg class="icon" aria-hidden="true"><use href="#icon-hangup"/></svg><span class="control-label">Leave call</span><span class="compact-label" aria-hidden="true">Leave</span></button>
+      </div>
+    </div>
+    <button id="enable-audio" class="primary unblock-audio" hidden><svg class="icon" aria-hidden="true"><use href="#icon-speaker"/></svg><span>Play your friend’s audio</span></button>
+    <p id="call-message" role="alert"></p>
+    <p class="help privacy-note"><svg class="icon" aria-hidden="true"><use href="#icon-camera-off"/></svg><span>Your microphone and camera stay off until you enable them. Closing this window ends the call; your watch party continues.</span></p>
+  </footer>
 </main>
 <script src="call.js"></script>
 </body></html>

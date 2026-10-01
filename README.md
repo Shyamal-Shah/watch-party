@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.3.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.4.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -73,6 +73,8 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 5. **Mute mic** and **Turn camera off** stop those capture tracks. **Mute speakers** silences incoming call audio. **Leave call** or closing the call window releases your devices while keeping the watch party active.
 
 The call window shows local and remote previews, microphone/camera status, connection errors, and a reconnect button. Leaving the party or being removed also releases your camera and microphone. During a temporary relay outage, enabled local devices remain active while the call reconnects; their status stays visible in the call window.
+
+Version 2.2.4 adds a responsive call layout: a large video area on wide screens, an inset self-preview, and a compact layout in the popup window. The microphone, camera, speaker, reconnect, and leave buttons have icons, with microphone/camera/speaker icons reflecting their state. Button labels remain available to keyboard and screen-reader users. Choose **Devices** to open microphone, camera, and speaker settings; wide windows show them in a sidebar. Press **Escape** to close settings.
 
 ### Devices and call quality
 
@@ -130,3 +132,5 @@ npm run test:browser
 The relay tests exercise actual WebSocket clients, permissions, reconnect identity, host transfer, message deduplication, room expiry, and invite validation. The browser tests load the extension in two separate Chromium profiles, with a generated WebM video on an intercepted streaming page. It covers invite joining, late sync, guest control enforcement, shared controls, reconnect chat, player reload/replacement, running playback, buffering, following a new title, and removal. They also use fake microphones/cameras with real WebRTC connections to verify received audio packets, video frames, both offer directions, listen-only mode, permission denial, device toggles, closing/reopening calls, reconnection, and device cleanup on removal. They do not access paid streaming content or real user devices.
 
 The Netflix control tests verify native seek values in milliseconds, watch-session selection, play/pause, optional speed support, malformed/stale commands, and unavailable APIs without direct video-element fallbacks. Browser tests simulate Netflix's page player around a real video and check that joins reuse one streaming tab and synchronization actually calls the page player across Chrome's isolated/MAIN world boundary. This simulation does not reproduce Netflix's DRM player or establish that an error on a subscribed account has been resolved.
+
+The live-call browser checks also resize the window from 300 pixels to 2560 pixels wide, check for horizontal overflow and reachable controls, verify self-preview bounds and changing button icons, and exercise the device sidebar and keyboard dismissal.
