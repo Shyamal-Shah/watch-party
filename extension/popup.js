@@ -17,6 +17,11 @@ function show(view) {
   $('active').classList.toggle('hidden', !party || !!incoming);
   $('start').classList.toggle('hidden', !!party && !incoming);
   $('relay-settings').classList.toggle('hidden', !!party && !incoming);
+  const unread = party ? view.unreadCount || 0 : 0;
+  $('unread-count').classList.toggle('hidden', !unread);
+  $('unread-count').textContent = unread > 99 ? '99+' : String(unread);
+  const chatLabel = `Open party chat${unread ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`;
+  $('open-party').setAttribute('aria-label', chatLabel); $('open-party').title = chatLabel;
   if (party) {
     $('room-code').textContent = party.code;
     $('connection').textContent = ({ connected: 'Connected', connecting: 'Connecting to party…', reconnecting: 'Reconnecting automatically…', error: 'Unable to connect' })[view.status] || view.status;
@@ -84,8 +89,11 @@ $('open-call').onclick = () => request({ type: 'OPEN_CALL' }).catch(e => msg(e.m
 $('retry').onclick = () => request({ type: 'RETRY' }).catch(e => msg(e.message));
 $('open-party').onclick = async () => {
   try {
-    await chrome.tabs.update(current.tabId, { active: true });
+    const tab = await chrome.tabs.update(current.tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
     await chrome.tabs.sendMessage(current.tabId, { type: 'OPEN_PANEL' });
+    // Action popups otherwise keep keyboard focus away from the reader tab.
+    if (!sourceTab) window.close();
   } catch { msg('The player is loading. Refresh the streaming tab if the panel does not appear.'); }
 };
 $('save-relay').onclick = async () => {

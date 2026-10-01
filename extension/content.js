@@ -9,6 +9,7 @@
   let dismissedRemoval = null;
   let view = null, tabId = null, player = null, playerEvents = null;
   let root, ui, panel, statusLine, note, people, chat, input, hostOnly, hostSettings, retry, follow, unlock, inviteButton;
+  let chatToggle, unreadBadge, readingChat = false;
   let suppressUntil = 0, expectedSeek = null, buffering = false, autoplayBlocked = false, correctionRate = null;
   let lastSyncSeek = -Infinity, applying = false, controlEpoch = 0, rateUnsupported = false, playerError = '';
   let localActionAt = 0, lastPublish = 0, lastMedia = '', lastPeople = '', lastChat = '', localError = '';
@@ -40,6 +41,9 @@
     style.textContent = `
       :host{all:initial;font-family:Arial,sans-serif;color:#f8f4f8}*{box-sizing:border-box;font-family:Arial,sans-serif}button,input{font:inherit}button{cursor:pointer;border:1px solid #534251;border-radius:7px;background:#302331;color:#fff;padding:7px 10px;font-size:12px}button:hover{background:#50304a}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid #fc8cba;outline-offset:2px}[hidden]{display:none!important}.panel{color:#f8f4f8;width:340px;max-width:calc(100vw - 24px);max-height:calc(100vh - 90px);background:#17131b;border:1px solid #624255;border-radius:15px;box-shadow:0 16px 60px #000a;display:flex;flex-direction:column;overflow:auto;margin-bottom:10px}header{display:flex;justify-content:space-between;align-items:center;padding:14px;background:#322032;font-size:14px}header small{display:block;color:#dfbad0;font-size:11px;margin-top:5px}.status{padding:10px 14px;color:#efb8cf;font-size:12px;line-height:1.5}.note{padding:0 14px 10px;color:#bfb2c5;font-size:11px;line-height:1.5}.actions{display:flex;gap:5px;padding:0 12px 10px;flex-wrap:wrap}.people{padding:0 14px 10px;max-height:120px;overflow:auto;font-size:12px}.person{display:flex;gap:7px;align-items:center;margin:5px 0}.person span{flex:1}.person button{font-size:10px;padding:3px 5px}.settings{padding:0 12px 10px;font-size:12px}.chat{height:180px;min-height:90px;overflow:auto;border-top:1px solid #3a2b3a;padding:10px 14px;font-size:12px;line-height:1.5}.line{margin:5px 0;overflow-wrap:anywhere}.line b{color:#f994be}.pending{opacity:.65}form{display:flex;gap:6px;padding:10px;border-top:1px solid #3a2b3a}input[type=text]{min-width:0;flex:1;color:#fff;background:#29212d;border:1px solid #5a4356;border-radius:7px;padding:9px;font-size:12px}.toggle{float:right;width:48px;height:48px;border-radius:16px;background:#d94483;font-size:23px}.invite{padding:16px;font-size:13px;line-height:1.6}.invite p{margin:0 0 10px}.invite button{margin-right:6px}
     `;
+    style.textContent += `
+      .toggle{position:relative}.unread-badge{position:absolute;top:-6px;right:-6px;min-width:23px;height:23px;padding:0 5px;border:2px solid #17131b;border-radius:999px;background:#ff668e;color:#17131b;font-size:11px;line-height:19px;font-weight:700;text-align:center;pointer-events:none}
+    `;
     root.addEventListener('keydown', event => event.stopPropagation());
     document.documentElement.append(root);
   }
@@ -58,7 +62,9 @@
     const header = el('header', '', panel);
     const title = el('div', 'Watch Party', header);
     el('small', `Room ${view.party.code}`, title);
-    button('×', header, () => { panel.hidden = true; }).setAttribute('aria-label', 'Hide chat');
+    panel.id = 'wp-party-panel';
+    panel.addEventListener('scroll', markChatRead, { passive: true });
+    button('×', header, () => setPanelOpen(false)).setAttribute('aria-label', 'Hide chat');
     statusLine = el('div', '', panel, 'status'); statusLine.setAttribute('role', 'status');
     note = el('div', '', panel, 'note'); note.setAttribute('aria-live', 'polite');
     const actions = el('div', '', panel, 'actions');
@@ -84,6 +90,7 @@
     hostOnly.onchange = () => request({ type: 'SETTINGS', hostOnly: hostOnly.checked });
     people = el('div', '', panel, 'people'); people.setAttribute('aria-label', 'Participants');
     chat = el('div', '', panel, 'chat'); chat.setAttribute('role', 'log'); chat.setAttribute('aria-label', 'Party chat');
+    chat.addEventListener('scroll', markChatRead, { passive: true });
     const form = el('form', '', panel);
     input = el('input', '', form); input.type = 'text'; input.placeholder = 'Say something…'; input.maxLength = 500; input.setAttribute('aria-label', 'Chat message');
     const send = el('button', 'Send', form); send.type = 'submit';
@@ -92,7 +99,33 @@
       const result = await request({ type: 'CHAT', text: input.value });
       if (result) input.value = '';
     };
-    button('✦', ui, () => { panel.hidden = !panel.hidden; }).className = 'toggle';
+    chatToggle = button('✦', ui, () => setPanelOpen(panel.hidden)); chatToggle.className = 'toggle';
+    chatToggle.setAttribute('aria-controls', panel.id);
+    unreadBadge = el('span', '', chatToggle, 'unread-badge'); unreadBadge.setAttribute('aria-hidden', 'true');
+  }
+  function setPanelOpen(open) {
+    if (!panel) return;
+    panel.hidden = !open;
+    if (open) {
+      chat.scrollTop = chat.scrollHeight;
+      panel.scrollTop = panel.scrollHeight;
+    }
+    render();
+    requestAnimationFrame(markChatRead);
+  }
+  function markChatRead() {
+    if (readingChat || !active() || !view.unreadCount || !panel || panel.hidden || !chat?.clientHeight
+      || document.visibilityState !== 'visible' || !document.hasFocus()
+      || chat.scrollHeight - chat.scrollTop - chat.clientHeight > 2) return;
+    const bounds = chat.getBoundingClientRect(), panelBounds = panel.getBoundingClientRect();
+    if (bounds.bottom > Math.min(innerHeight, panelBounds.bottom) || bounds.bottom <= Math.max(0, panelBounds.top)) return;
+    const throughId = view.room?.messages.at(-1)?.id;
+    if (!throughId) return;
+    readingChat = true;
+    // Acknowledge the displayed snapshot, so a simultaneous incoming message
+    // remains unread until it has also been rendered in the visible chat.
+    chrome.runtime.sendMessage({ type: 'CHAT_READ', code: view.party.code, relayUrl: view.party.relayUrl, throughId })
+      .catch(() => {}).finally(() => { readingChat = false; });
   }
   function render() {
     // Same-document navigation can deliver a new invitation without reloading.
@@ -124,6 +157,12 @@
       return;
     }
     buildPanel(); if (!panel) return;
+    const unread = view.unreadCount || 0;
+    unreadBadge.hidden = !unread;
+    unreadBadge.textContent = unread > 99 ? '99+' : String(unread);
+    const chatLabel = `${panel.hidden ? 'Open' : 'Close'} party chat${unread ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`;
+    chatToggle.setAttribute('aria-label', chatLabel); chatToggle.title = chatLabel;
+    chatToggle.setAttribute('aria-expanded', String(!panel.hidden));
     const connected = view.status === 'connected';
     const count = view.room?.participants.filter(p => p.online).length || 0;
     statusLine.textContent = `${{ connected: 'Connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Unable to join', removed: 'Removed' }[view.status] || 'Offline'} · ${count} / 2 watching${isHost() ? ' · You are the host' : ''}`;
@@ -158,6 +197,7 @@
       }
       if (stick) chat.scrollTop = chat.scrollHeight;
     }
+    requestAnimationFrame(markChatRead);
   }
   function discoverPlayer() {
     const next = [...document.querySelectorAll('video')].sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight))[0] || null;
@@ -259,7 +299,7 @@
       const video = document.querySelector('video');
       respond({ hasVideo: !!video, mediaUrl: P.mediaUrl(location.href) });
     }
-    if (message.type === 'OPEN_PANEL') { if (panel) panel.hidden = false; respond({}); }
+    if (message.type === 'OPEN_PANEL') { setPanelOpen(true); respond({}); }
   });
   chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.roomView) update(changes.roomView.newValue); });
   request({ type: 'GET_VIEW' }).then(initial => {
@@ -272,6 +312,8 @@
     if (area === 'local' && changes.party) request({ type: 'GET_VIEW' }).then(next => { if (next) { tabId = next.clientTabId ?? (next.bound ? next.tabId : tabId); update(next); } });
   });
   window.addEventListener('hashchange', render);
+  window.addEventListener('focus', () => requestAnimationFrame(markChatRead));
+  document.addEventListener('visibilitychange', () => requestAnimationFrame(markChatRead));
   document.addEventListener('fullscreenchange', () => { if (root) (document.fullscreenElement || document.documentElement).append(root); });
   setInterval(() => {
     if (!active()) { render(); return; }

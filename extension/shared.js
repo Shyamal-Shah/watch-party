@@ -57,8 +57,28 @@
         && Number.isFinite(room.playback.rate) && room.playback.rate >= 0.25 && room.playback.rate <= 4
         && Number.isFinite(room.playback.updatedAt) && typeof room.playback.paused === 'boolean'));
   }
+  // Track only messages still available in the relay's recent history. The
+  // first snapshot is a baseline; repeated snapshots and our own texts don't
+  // create notifications. Persisting this state also covers reconnects.
+  function updateChatUnread(previous, key, messages, meId) {
+    const current = previous?.key === key && previous.initialized === true
+      && Array.isArray(previous.seenIds) && Array.isArray(previous.unreadIds) ? previous : null;
+    const seen = new Set(current?.seenIds || []);
+    const unread = new Set(current?.unreadIds || []);
+    const incoming = messages.filter(m => m.memberId !== meId);
+    const unreadIds = [...new Set(incoming.filter(m => unread.has(m.id) || (current && !seen.has(m.id))).map(m => m.id))];
+    return { key, initialized: true, seenIds: [...new Set(messages.map(m => m.id))], unreadIds };
+  }
+  function readChatUnread(state, messages, throughId) {
+    const index = messages.findIndex(m => m.id === throughId);
+    if (!state || index < 0) return state;
+    // A reader may still be showing an older snapshot. Never clear newer texts
+    // that arrived after the last message it actually displayed.
+    const readIds = new Set(messages.slice(0, index + 1).map(m => m.id));
+    return { ...state, unreadIds: state.unreadIds.filter(id => !readIds.has(id)) };
+  }
   const DEFAULT_RELAY_URL = 'wss://watch-party-i6o3.onrender.com/';
-  const api = { DEFAULT_RELAY_URL, mediaUrl, mediaKey, relayUrl, permissionOrigin, position, invite, parseInvite, validRoom };
+  const api = { DEFAULT_RELAY_URL, mediaUrl, mediaKey, relayUrl, permissionOrigin, position, invite, parseInvite, validRoom, updateChatUnread, readChatUnread };
   if (typeof module !== 'undefined') module.exports = api;
   else root.WatchParty = api;
 })(globalThis);

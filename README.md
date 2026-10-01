@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.4.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.5.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -63,6 +63,14 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 - **Only the host controls playback** is enabled by default. The host can uncheck it to let everyone play, pause, seek, and change speed. The relay enforces this setting.
 - The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room, but can join a new room with a different code. Removal notices apply to the original party tab; a fresh invite to another room remains joinable. Version 2.2.1 fixes stale removal notices hiding new invitations. After updating, reload the extension and refresh streaming tabs.
 - If the host leaves, control moves to an online participant. After an unexpected host disconnect, the relay allows 45 seconds for reconnection before transferring control.
+
+## Chat notifications
+
+Version 2.2.5 shows an unread-text count on the Chrome extension icon, the floating party-chat button, **Open party chat** in the popup, and the call window's **Chat** button. Pin Watch Party to Chrome's toolbar to keep its badge visible. Counts display **99+** above 99 messages. The call window's **Chat** button returns to the streaming tab and opens the chat while the call continues.
+
+New messages from the other participant count as unread while the chat is hidden, the streaming tab is in the background, or you are reading older messages. Open the party chat in the focused streaming tab and scroll to the latest messages to clear the count. Opening it with the floating button or **Open party chat** jumps to the latest messages. Opening the extension popup alone does not mark messages as read.
+
+Your own messages and history received when first joining do not trigger counts. Unread state is saved locally and restored after reconnecting or reloading the extension; missed incoming texts still present in the relay's history are counted after reconnection. Counts cover the relay's last 100 messages and reset when you leave, are removed, or start/join another party. Both participants should update the extension; this feature needs no relay redeployment.
 
 ## Voice and video calls
 

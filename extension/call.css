@@ -5,6 +5,7 @@ body{margin:0;background:radial-gradient(ellipse at 50% 0,#30203455,transparent 
 .icon-defs{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
 .icon{display:block;width:22px;height:22px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .call-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.header-actions{display:flex;gap:8px;flex-shrink:0}.chat-button{position:relative}.chat-unread{position:absolute;top:-6px;right:-6px;display:grid;place-items:center;min-width:23px;height:23px;padding:0 5px;border:2px solid var(--bg);border-radius:999px;background:#ff668e;color:#17131b;font-size:11px;font-weight:700;pointer-events:none}
 .brand{display:flex;align-items:center;gap:12px;min-width:0}
 .mark{background:linear-gradient(135deg,#ef568c,#b349da);width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex-shrink:0;box-shadow:0 5px 20px #bd3e7025}
 .mark .icon{width:26px;height:26px;fill:currentColor;stroke:none}

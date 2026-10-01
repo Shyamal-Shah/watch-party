@@ -17,11 +17,15 @@
   <symbol id="icon-signal" viewBox="0 0 24 24"><path d="M4 19v-3m5 3v-7m5 7V8m5 11V4"/></symbol>
   <symbol id="icon-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
   <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="icon-chat" viewBox="0 0 24 24"><path d="M21 11a9 9 0 0 1-9 9H4l-3 3V11a10 10 0 0 1 20 0Z"/><path d="M7 9h8M7 13h5"/></symbol>
 </defs></svg>
 <main class="call-app">
   <header class="call-header">
     <div class="brand"><span class="mark"><svg class="icon" aria-hidden="true"><use href="#icon-spark"/></svg></span><div><h1>Watch Party call</h1><p id="room-label">Two people. One movie night.</p></div></div>
-    <button id="device-toggle" class="settings-button" aria-controls="device-settings" aria-expanded="false" aria-label="Open device settings" title="Microphone, camera and speakers"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span>Devices</span></button>
+    <div class="header-actions">
+      <button id="open-chat" class="settings-button chat-button" aria-label="Open party chat" title="Open party chat" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chat"/></svg><span>Chat</span><b id="chat-unread" class="chat-unread" aria-hidden="true" hidden></b></button>
+      <button id="device-toggle" class="settings-button" aria-controls="device-settings" aria-expanded="false" aria-label="Open device settings" title="Microphone, camera and speakers"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span>Devices</span></button>
+    </div>
   </header>
   <section class="connection-bar" aria-label="Call connection">
     <div class="connection-status"><span id="connection-dot" class="status-dot" aria-hidden="true"></span><p id="call-status" role="status" aria-live="polite">Join a party to start a call.</p></div>

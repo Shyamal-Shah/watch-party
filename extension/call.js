@@ -41,6 +41,12 @@ function render() {
   const friend = other();
   const online = view?.status === 'connected';
   $('room-label').textContent = view?.party ? `Room ${view.party.code} · ${view.room?.participants.filter(p => p.online).length || 0} / 2 watching` : 'No active watch party';
+  const unread = view?.party ? view.unreadCount || 0 : 0;
+  $('chat-unread').hidden = !unread;
+  $('chat-unread').textContent = unread > 99 ? '99+' : String(unread);
+  const chatLabel = `Open party chat${unread ? `, ${unread} unread message${unread === 1 ? '' : 's'}` : ''}`;
+  $('open-chat').setAttribute('aria-label', chatLabel); $('open-chat').title = chatLabel;
+  $('open-chat').disabled = !view?.party || !Number.isInteger(view.tabId);
   $('join-controls').hidden = wanted || joining;
   $('call-controls').hidden = !wanted && !joining;
   $('join-voice').disabled = $('listen').disabled = !devicesReady || !online || !view?.room?.capabilities?.voiceVideo;
@@ -411,6 +417,13 @@ function attachPort() {
 attachPort();
 $('join-voice').onclick = () => join(true);
 $('listen').onclick = () => join(false);
+$('open-chat').onclick = async () => {
+  try {
+    const tab = await chrome.tabs.update(view.tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    await chrome.tabs.sendMessage(tab.id, { type: 'OPEN_PANEL' });
+  } catch { message = 'The player is loading. Refresh the streaming tab if the chat does not appear.'; render(); }
+};
 $('mic').onclick = () => toggle('audio');
 $('camera').onclick = () => toggle('video');
 $('speaker').onclick = () => { speakersMuted = !speakersMuted; $('remote-video').muted = speakersMuted; render(); };

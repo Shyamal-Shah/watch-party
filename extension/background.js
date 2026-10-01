@@ -13,6 +13,8 @@ let attempt = 0;
 let lastSeen = 0;
 let halfRtt = 0;
 let pending = [];
+let chatUnread = null;
+let displayedUnread = null;
 let stopped = false;
 let callTabId = null;
 let callSession = null;
@@ -25,10 +27,21 @@ const enqueue = work => {
 };
 function view() {
   return { party: party ? { code: party.code, name: party.name, relayUrl: party.relayUrl, mediaUrl: party.mediaUrl } : null,
-    tabId: party?.tabId, room, meId, status, error, removal, pending, retrySeconds: Math.min(30, 2 ** attempt) };
+    tabId: party?.tabId, room, meId, status, error, removal, pending, unreadCount: chatUnread?.unreadIds.length || 0, retrySeconds: Math.min(30, 2 ** attempt) };
 }
-async function publish() { await chrome.storage.local.set({ roomView: view() }); }
-async function saveSession() { await chrome.storage.local.set({ party, pendingChats: pending }); }
+async function publish() {
+  const snapshot = view();
+  await chrome.storage.local.set({ roomView: snapshot });
+  if (displayedUnread !== snapshot.unreadCount) {
+    const count = snapshot.unreadCount;
+    await Promise.all([
+      chrome.action.setBadgeText({ text: count ? (count > 99 ? '99+' : String(count)) : '' }),
+      chrome.action.setTitle({ title: count ? `Watch Party · ${count} unread message${count === 1 ? '' : 's'}` : 'Watch Party' }),
+    ]);
+    displayedUnread = count;
+  }
+}
+async function saveSession() { await chrome.storage.local.set({ party, pendingChats: pending, chatUnread }); }
 async function followHost(joined = false) {
   if (!party || meId === room.hostId) return;
   const target = P.mediaUrl(room.mediaUrl);
@@ -102,7 +115,7 @@ async function connect() {
     if (packet.type === 'removed') {
       removal = { id: crypto.randomUUID(), code: party.code, relayUrl: party.relayUrl, tabId: party.tabId };
       callSession = null;
-      stopped = true; teardown(); party = null; room = null; pending = [];
+      stopped = true; teardown(); party = null; room = null; pending = []; chatUnread = null;
       status = 'removed'; error = packet.message;
       await saveSession(); await publish(); return;
     }
@@ -143,6 +156,7 @@ async function connect() {
     }
     // Room snapshots also acknowledge delivered chat, including after reconnect.
     pending = pending.filter(item => !room.messages.some(m => m.id === item.id && m.memberId === meId));
+    chatUnread = P.updateChatUnread(chatUnread, JSON.stringify([party.relayUrl, party.code]), room.messages, meId);
     await saveSession(); await publish();
   }));
   ws.addEventListener('close', () => enqueue(async () => {
@@ -154,7 +168,7 @@ async function connect() {
 async function leave() {
   callSession = null;
   send({ type: 'leave' });
-  teardown(); party = null; room = null; meId = ''; pending = [];
+  teardown(); party = null; room = null; meId = ''; pending = []; chatUnread = null;
   status = 'idle'; error = ''; removal = null; stopped = false; attempt = 0;
   await saveSession(); await publish();
 }
@@ -223,6 +237,15 @@ async function handle(message, sender) {
     stopped = false; attempt = 0; error = ''; teardown(); await connect(); return {};
   }
   if (!bound && !extensionPage) throw new Error('This tab is not in the party.');
+  if (message.type === 'CHAT_READ') {
+    if (!bound || !room || message.code !== party.code || message.relayUrl !== party.relayUrl) return { read: false };
+    const tab = await chrome.tabs.get(party.tabId).catch(() => null);
+    const window = tab ? await chrome.windows.get(tab.windowId).catch(() => null) : null;
+    if (!tab?.active || !window?.focused || !room.messages.some(m => m.id === message.throughId)) return { read: false };
+    chatUnread = P.readChatUnread(chatUnread, room.messages, message.throughId);
+    await saveSession(); await publish();
+    return { read: true };
+  }
   if (message.type === 'CHAT') {
     if (!party || stopped) throw new Error('Join an active room first.');
     const text = String(message.text || '').trim().slice(0, 500);
@@ -284,10 +307,14 @@ chrome.alarms.onAlarm.addListener(() => enqueue(connect));
 enqueue(async () => {
   const call = await chrome.storage.session.get('callTabId');
   callTabId = call.callTabId ?? null;
-  const saved = await chrome.storage.local.get(['party', 'identityToken', 'pendingChats']);
+  const saved = await chrome.storage.local.get(['party', 'identityToken', 'pendingChats', 'chatUnread']);
   token = saved.identityToken || Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, '0')).join('');
   await chrome.storage.local.set({ identityToken: token });
   party = saved.party?.v === 2 ? saved.party : null;
   pending = party ? saved.pendingChats || [] : [];
+  const key = party ? JSON.stringify([party.relayUrl, party.code]) : null;
+  chatUnread = key && saved.chatUnread?.key === key && saved.chatUnread.initialized === true
+    && Array.isArray(saved.chatUnread.seenIds) && Array.isArray(saved.chatUnread.unreadIds) ? saved.chatUnread : null;
+  await chrome.action.setBadgeBackgroundColor({ color: '#D94483' });
   await publish(); await connect();
 });
