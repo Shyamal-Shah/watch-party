@@ -59,11 +59,9 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
     const joinPage = await joinPagePromise; await joinPage.waitForLoadState();
     await expect(joinPage.locator('#relay-url')).toHaveValue(relayUrl);
     await joinPage.locator('#name').fill('Guest');
-    const videoPagePromise = guest.context.waitForEvent('page');
     await joinPage.getByRole('button', { name: 'Join', exact: true }).click();
-    const guestVideo = await videoPagePromise; await guestVideo.waitForLoadState();
-    // Tabs opened by the extension can start their first request before Playwright attaches.
-    await guestVideo.goto('https://www.netflix.com/watch/123');
+    // Joining binds the original invite/player tab, preserving its loaded video.
+    const guestVideo = invite;
     await expect(guestVideo.locator('#wp-root .status')).toContainText('Connected');
     await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime)).toBeGreaterThan(16);
     await expect(guestVideo.locator('#wp-root .people')).toContainText('Host');

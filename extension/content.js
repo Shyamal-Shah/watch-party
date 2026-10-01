@@ -9,6 +9,7 @@
   let view = null, tabId = null, player = null, playerEvents = null;
   let root, ui, panel, statusLine, note, people, chat, input, hostOnly, hostSettings, retry, follow, unlock, inviteButton;
   let suppressUntil = 0, expectedSeek = null, buffering = false, autoplayBlocked = false, correctionRate = null;
+  let lastSyncSeek = -Infinity, playPending = false;
   let localActionAt = 0, lastPublish = 0, lastMedia = '', lastPeople = '', lastChat = '', localError = '';
   const active = () => view?.party && view.tabId === tabId;
   const isHost = () => view?.room?.hostId === view?.meId;
@@ -154,6 +155,7 @@
     if (next === player) return;
     playerEvents?.abort(); player = next;
     buffering = false; autoplayBlocked = false; expectedSeek = null;
+    lastSyncSeek = -Infinity; playPending = false;
     if (!player) return;
     playerEvents = new AbortController();
     const on = (type, callback) => player.addEventListener(type, callback, { signal: playerEvents.signal });
@@ -188,7 +190,8 @@
   }
   function applyState(force = false) {
     const p = view?.room?.playback;
-    if (!active() || view.status !== 'connected' || !p || !player || player.readyState < 1 || player.seeking) return;
+    // Metadata alone does not mean the streaming player is ready for controls.
+    if (!active() || view.status !== 'connected' || !p || !player || player.readyState < 3 || player.seeking || player.error) return;
     if (P.mediaKey(view.room.mediaUrl) !== P.mediaKey(location.href)) return;
     if (!force && performance.now() - localActionAt < 1000) return;
     // Let the host's player recover naturally from buffering; followers wait.
@@ -198,16 +201,21 @@
     const difference = target - player.currentTime;
     const paused = p.paused || p.buffering;
     try {
-      if (Math.abs(difference) > (paused ? 0.2 : 1.2)) {
-        suppressUntil = performance.now() + 1200; expectedSeek = target; player.currentTime = target;
+      if (Math.abs(difference) > (paused ? 0.2 : 1.2) && performance.now() - lastSyncSeek >= 3000) {
+        // Room/presence updates can arrive in bursts. Allow a seek to settle
+        // before attempting another, including when the player rejects it.
+        lastSyncSeek = performance.now();
+        suppressUntil = lastSyncSeek + 1200; expectedSeek = target; player.currentTime = target;
       }
       const rate = !isHost() && !paused && Math.abs(difference) > 0.2 && Math.abs(difference) <= 1.2 ? p.rate * (difference > 0 ? 1.03 : 0.97) : p.rate;
       correctionRate = rate === p.rate ? null : rate;
       if (Math.abs(player.playbackRate - rate) > 0.001) { suppressUntil = performance.now() + 1200; player.playbackRate = rate; }
       if (paused && !player.paused) { suppressUntil = performance.now() + 1200; player.pause(); }
-      else if (!paused && player.paused && !autoplayBlocked) {
+      else if (!paused && player.paused && !autoplayBlocked && !playPending) {
         suppressUntil = performance.now() + 1200;
-        player.play().catch(() => { autoplayBlocked = true; render(); });
+        const playing = player; playPending = true;
+        playing.play().catch(() => { if (player === playing && active()) { autoplayBlocked = true; render(); } })
+          .finally(() => { if (player === playing) playPending = false; });
       }
     } catch { localError = 'This player could not apply sync. Reload the video and try again.'; }
   }

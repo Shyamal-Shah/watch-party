@@ -134,6 +134,13 @@ async function connect() {
       for (const item of pending) send({ type: 'chat', id: item.id, text: item.text });
     }
     await followHost(packet.type === 'joined');
+    if (packet.type === 'joined' && party.focusOnJoin) {
+      party.focusOnJoin = false;
+      try {
+        const tab = await chrome.tabs.update(party.tabId, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+      } catch { /* The party tab may have closed while joining. */ }
+    }
     // Room snapshots also acknowledge delivered chat, including after reconnect.
     pending = pending.filter(item => !room.messages.some(m => m.id === item.id && m.memberId === meId));
     await saveSession(); await publish();
@@ -157,7 +164,10 @@ async function handle(message, sender) {
   if (message.type === 'OPEN_INVITE') {
     const invite = P.parseInvite(message.url);
     if (!invite) throw new Error('Invalid invite link.');
-    await chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') + '#invite=' + encodeURIComponent(message.url) });
+    if (!Number.isInteger(sender.tab?.id) || !P.mediaUrl(sender.url)) throw new Error('Open the invitation on a supported streaming tab.');
+    // Keep the original player tab through the separate name/permission page.
+    const url = `${chrome.runtime.getURL('popup.html')}?sourceTab=${sender.tab.id}#invite=${encodeURIComponent(message.url)}`;
+    await chrome.tabs.create({ url, openerTabId: sender.tab.id, windowId: sender.tab.windowId });
     return {};
   }
   const extensionPage = sender.url?.startsWith(chrome.runtime.getURL(''));
@@ -198,9 +208,13 @@ async function handle(message, sender) {
     if (!await chrome.permissions.contains({ origins: [P.permissionOrigin(relayUrl)] })) throw new Error('Allow access to the relay server first.');
     if (!/^[A-Z0-9]{6}$/.test(message.code)) throw new Error('Enter a six character room code.');
     if (message.create && !P.mediaUrl(message.mediaUrl)) throw new Error('Open a supported video first.');
+    if (message.tabId != null) {
+      const tab = Number.isInteger(message.tabId) ? await chrome.tabs.get(message.tabId).catch(() => null) : null;
+      if (!tab || !P.mediaUrl(tab.pendingUrl || tab.url)) throw new Error('The original streaming tab closed or changed. Open the invite again from your video tab.');
+    }
     await leave();
     party = { v: 2, code: message.code, name: String(message.name || 'Guest').slice(0, 24), relayUrl,
-      create: !!message.create, mediaUrl: P.mediaUrl(message.mediaUrl), tabId: message.tabId ?? null };
+      create: !!message.create, mediaUrl: P.mediaUrl(message.mediaUrl), tabId: message.tabId ?? null, focusOnJoin: !!message.focusOnJoin };
     await chrome.storage.local.set({ relayUrl, displayName: party.name });
     await saveSession(); await connect(); return {};
   }

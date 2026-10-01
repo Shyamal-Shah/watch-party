@@ -3,6 +3,8 @@ const $ = id => document.getElementById(id);
 const msg = text => { $('message').textContent = text; };
 let current = null;
 let incoming = null;
+let starting = false;
+const sourceTab = new URL(location.href).searchParams.get('sourceTab');
 async function request(packet) {
   const response = await chrome.runtime.sendMessage(packet);
   if (response?.rpcError) throw new Error(response.rpcError);
@@ -39,6 +41,9 @@ function createCode() {
   return Array.from(crypto.getRandomValues(new Uint8Array(6)), n => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[n % 32]).join('');
 }
 async function start(create) {
+  if (starting) return;
+  starting = true;
+  $('create').disabled = $('join').disabled = true;
   try {
     const pasted = P.parseInvite($('code').value.trim());
     if (pasted) fillInvite(pasted);
@@ -48,18 +53,24 @@ async function start(create) {
     // Keep the permission request directly inside this button's user gesture.
     const allowed = await chrome.permissions.request({ origins: [P.permissionOrigin(relay)] });
     if (!allowed) throw new Error('Allow connection to this server to join the party.');
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const supported = P.mediaUrl(tab?.url);
+    let tab;
+    if (!create && sourceTab !== null) {
+      const id = /^\d+$/.test(sourceTab) ? Number(sourceTab) : NaN;
+      tab = Number.isSafeInteger(id) ? await chrome.tabs.get(id).catch(() => null) : null;
+      if (!tab || !P.mediaUrl(tab.pendingUrl || tab.url)) throw new Error('The original streaming tab closed or changed. Open the invite again from your video tab.');
+    } else [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const supported = P.mediaUrl(tab?.pendingUrl || tab?.url);
     let mediaUrl = incoming?.code === code ? incoming.mediaUrl : supported;
     if (create) {
       const player = tab?.id ? await chrome.tabs.sendMessage(tab.id, { type: 'GET_PLAYER' }).catch(() => null) : null;
       if (!player?.hasVideo || !supported) throw new Error('Open a video on Netflix, Prime Video, or JioHotstar first. Refresh the streaming tab if you just installed the extension.');
       mediaUrl = player.mediaUrl;
     }
-    await request({ type: 'START_PARTY', create, code, relayUrl: relay, name: $('name').value.trim() || 'Guest', mediaUrl, tabId: supported ? tab.id : null });
+    await request({ type: 'START_PARTY', create, code, relayUrl: relay, name: $('name').value.trim() || 'Guest', mediaUrl, tabId: supported ? tab.id : null, focusOnJoin: !create && sourceTab !== null });
     incoming = null; $('invite-info').classList.add('hidden'); $('create').classList.remove('hidden');
     msg(''); show(await request({ type: 'GET_VIEW' }));
   } catch (e) { msg(e.message === 'Invalid URL' ? 'Enter a relay server URL or paste an invite link first.' : e.message); $('relay-settings').open = true; }
+  finally { starting = false; $('create').disabled = $('join').disabled = false; }
 }
 $('create').onclick = () => start(true);
 $('join').onclick = () => start(false);

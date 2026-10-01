@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.1.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.2.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -44,7 +44,9 @@ The relay listens on `0.0.0.0:8080`, or the port supplied by `PORT`. `/health` r
 2. Open the extension. The default relay is already set to `wss://watch-party-i6o3.onrender.com/`. Allow Chrome access when prompted on starting or joining.
 3. Enter your name and choose **Start a party**.
 4. When connected, choose **Copy invite link** in the popup or player panel.
-5. Friends open that link, choose **Join party** on the streaming page, enter a name, and click **Join**. The link fills in the room and relay URL automatically. Chrome may ask them to allow access to that server.
+5. Friends open that link, choose **Join party** on the streaming page, enter a name on the Watch Party page, and click **Join**. The link fills in the room and relay URL automatically. Chrome may ask them to allow access to that server. After connecting, the extension returns to the original streaming tab and uses its existing player. Keep that tab open while entering your name; if it closes, reopen the invite to start again.
+
+Version 2.2.2 fixes the invite flow creating a second streaming tab. If an older version opened a duplicate Netflix tab with a playback error, leave that party, close the duplicate, update/reload the extension, refresh the working streaming tab, and join again. This fixes the duplicate-tab flow; real Netflix playback still needs checking with a subscribed account.
 
 You can also paste an invite link directly into the popup. Joining by a six character code still works when the same relay is configured. Only the chosen streaming tab participates; closing that tab leaves the party.
 
@@ -54,6 +56,7 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 
 - Late joiners receive the latest playback position, pause state, playback speed, participant list, and up to 100 recent chat messages.
 - The host sends playback snapshots every five seconds. Followers check for drift each second, gently adjust speed for small differences, and seek for larger differences.
+- Sync waits for playable data before changing the player, spaces seek corrections at least three seconds apart, and avoids overlapping automatic play requests.
 - Host buffering holds the shared timeline. Guest buffering is shown in the participant list; a recovered guest catches up to the current timeline.
 - Reloaded and replaced video players resume synchronization when their metadata is available. If Chrome blocks autoplay, click **Resume sync** in the panel.
 - When the host's player opens another title or episode at a new URL, the guest's party tab follows automatically and sync resumes once the new player loads. This also follows the streaming service's own next-episode autoplay. The extension does not click next-episode buttons or bypass sign-in, ads, or access restrictions. **Open host’s video** remains available as a manual retry; repeated room updates do not repeatedly navigate a guest who has been redirected to sign-in. Invite links point to the latest room title.
