@@ -2,8 +2,10 @@
   if (window.__watchPartyLoaded) return;
   window.__watchPartyLoaded = true;
   const P = WatchParty;
-  const incomingInvite = P.parseInvite(location.href);
+  let incomingInvite = P.parseInvite(location.href);
+  let inviteUrl = location.href;
   let inviteDismissed = false;
+  let dismissedRemoval = null;
   let view = null, tabId = null, player = null, playerEvents = null;
   let root, ui, panel, statusLine, note, people, chat, input, hostOnly, hostSettings, retry, follow, unlock, inviteButton;
   let suppressUntil = 0, expectedSeek = null, buffering = false, autoplayBlocked = false, correctionRate = null;
@@ -85,14 +87,30 @@
     button('✦', ui, () => { panel.hidden = !panel.hidden; }).className = 'toggle';
   }
   function render() {
+    // Same-document navigation can deliver a new invitation without reloading.
+    if (inviteUrl !== location.href) {
+      const previousUrl = inviteUrl;
+      inviteUrl = location.href;
+      const nextInvite = P.parseInvite(inviteUrl);
+      // Keep an invitation if the player only strips its fragment during startup.
+      if ((nextInvite || P.mediaKey(previousUrl) !== P.mediaKey(inviteUrl)) && JSON.stringify(nextInvite) !== JSON.stringify(incomingInvite)) {
+        incomingInvite = nextInvite; inviteDismissed = false;
+        if (!panel) ui?.querySelectorAll('.invite').forEach(node => node.remove());
+      }
+    }
     if (root && !root.isConnected && document.documentElement) document.documentElement.append(root);
     if (!active()) {
       if (panel) { root?.remove(); root = null; panel = null; lastPeople = ''; lastChat = ''; }
-      if (view?.status === 'removed' && !inviteDismissed) {
+      const removal = view?.removal;
+      const sameInvite = !incomingInvite || (incomingInvite.code === removal?.code && incomingInvite.relay === removal?.relayUrl);
+      const showRemoval = view?.status === 'removed' && removal && removal.tabId === tabId && sameInvite && dismissedRemoval !== removal.id;
+      if (!showRemoval) ui?.querySelector('.removed')?.remove();
+      if (showRemoval) {
         mount();
         if (root && !ui.querySelector('.removed')) {
+          ui.querySelector('.invite')?.remove();
           const box = el('section', view.error, ui, 'panel invite removed');
-          button('Dismiss', box, () => { inviteDismissed = true; root.remove(); root = null; });
+          button('Dismiss', box, () => { dismissedRemoval = removal.id; root.remove(); root = null; render(); });
         }
       } else showInvite();
       return;
@@ -194,9 +212,14 @@
     } catch { localError = 'This player could not apply sync. Reload the video and try again.'; }
   }
   function update(next) {
-    const wasActive = active(); const previousHost = isHost(); const previousCode = view?.party?.code;
+    const wasActive = active(); const previousHost = isHost();
+    const partyKey = state => state?.party ? `${state.party.relayUrl}|${state.party.code}` : '';
+    const previousParty = partyKey(view);
     view = next;
-    if (previousCode !== view.party?.code && panel) { root?.remove(); root = null; panel = null; lastPeople = ''; lastChat = ''; }
+    if (previousParty !== partyKey(view)) {
+      root?.remove(); root = null; panel = null; lastPeople = ''; lastChat = ''; localError = '';
+      inviteDismissed = false;
+    }
     if (active()) {
       discoverPlayer(); render(); applyState();
       if (isHost() && (!view.room?.playback || !previousHost || !wasActive)) publishPlayback('initial');
@@ -212,16 +235,17 @@
   chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.roomView) update(changes.roomView.newValue); });
   request({ type: 'GET_VIEW' }).then(initial => {
     if (!initial) return;
-    tabId = initial.bound ? initial.tabId : null;
+    tabId = initial.clientTabId ?? (initial.bound ? initial.tabId : null);
     update(initial);
   });
   // The chosen tab can become bound after a join. Ask once on each room change.
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.party) request({ type: 'GET_VIEW' }).then(next => { if (next) { tabId = next.bound ? next.tabId : null; update(next); } });
+    if (area === 'local' && changes.party) request({ type: 'GET_VIEW' }).then(next => { if (next) { tabId = next.clientTabId ?? (next.bound ? next.tabId : tabId); update(next); } });
   });
+  window.addEventListener('hashchange', render);
   document.addEventListener('fullscreenchange', () => { if (root) (document.fullscreenElement || document.documentElement).append(root); });
   setInterval(() => {
-    if (!active()) { showInvite(); return; }
+    if (!active()) { render(); return; }
     discoverPlayer();
     const currentMedia = P.mediaKey(location.href);
     if (lastMedia !== currentMedia) { lastMedia = currentMedia; if (isHost()) publishPlayback('media'); }

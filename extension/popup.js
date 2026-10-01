@@ -9,6 +9,7 @@ async function request(packet) {
   return response;
 }
 function show(view) {
+  const previousError = current?.error;
   current = view;
   const party = view?.party;
   $('active').classList.toggle('hidden', !party || !!incoming);
@@ -22,7 +23,10 @@ function show(view) {
     $('copy-invite').disabled = !view.room || view.status !== 'connected';
     $('retry').classList.toggle('hidden', view.status === 'connected');
   }
-  if (view?.error) msg(view.error);
+  const unrelatedRemoval = view?.status === 'removed' && incoming
+    && (incoming.code !== view.removal?.code || incoming.relay !== view.removal?.relayUrl);
+  if (view?.error && !unrelatedRemoval) msg(view.error);
+  else if ($('message').textContent === previousError || $('message').textContent === view?.error) msg('');
 }
 function fillInvite(invite) {
   incoming = invite;

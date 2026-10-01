@@ -6,6 +6,7 @@ let room = null;
 let meId = '';
 let status = 'idle';
 let error = '';
+let removal = null;
 let socket = null;
 let retryTimer, heartbeat, connectTimeout;
 let attempt = 0;
@@ -24,7 +25,7 @@ const enqueue = work => {
 };
 function view() {
   return { party: party ? { code: party.code, name: party.name, relayUrl: party.relayUrl, mediaUrl: party.mediaUrl } : null,
-    tabId: party?.tabId, room, meId, status, error, pending, retrySeconds: Math.min(30, 2 ** attempt) };
+    tabId: party?.tabId, room, meId, status, error, removal, pending, retrySeconds: Math.min(30, 2 ** attempt) };
 }
 async function publish() { await chrome.storage.local.set({ roomView: view() }); }
 async function saveSession() { await chrome.storage.local.set({ party, pendingChats: pending }); }
@@ -99,6 +100,8 @@ async function connect() {
       return;
     }
     if (packet.type === 'removed') {
+      removal = { id: crypto.randomUUID(), code: party.code, relayUrl: party.relayUrl, tabId: party.tabId };
+      callSession = null;
       stopped = true; teardown(); party = null; room = null; pending = [];
       status = 'removed'; error = packet.message;
       await saveSession(); await publish(); return;
@@ -145,12 +148,12 @@ async function leave() {
   callSession = null;
   send({ type: 'leave' });
   teardown(); party = null; room = null; meId = ''; pending = [];
-  status = 'idle'; error = ''; stopped = false; attempt = 0;
+  status = 'idle'; error = ''; removal = null; stopped = false; attempt = 0;
   await saveSession(); await publish();
 }
 async function handle(message, sender) {
   const bound = party && sender.tab?.id === party.tabId;
-  if (message.type === 'GET_VIEW') return { ...view(), bound: !!bound };
+  if (message.type === 'GET_VIEW') return { ...view(), bound: !!bound, clientTabId: sender.tab?.id };
   if (message.type === 'OPEN_INVITE') {
     const invite = P.parseInvite(message.url);
     if (!invite) throw new Error('Invalid invite link.');

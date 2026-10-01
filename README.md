@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.0.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.1.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -58,7 +58,7 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 - Reloaded and replaced video players resume synchronization when their metadata is available. If Chrome blocks autoplay, click **Resume sync** in the panel.
 - When the host's player opens another title or episode at a new URL, the guest's party tab follows automatically and sync resumes once the new player loads. This also follows the streaming service's own next-episode autoplay. The extension does not click next-episode buttons or bypass sign-in, ads, or access restrictions. **Open host’s video** remains available as a manual retry; repeated room updates do not repeatedly navigate a guest who has been redirected to sign-in. Invite links point to the latest room title.
 - **Only the host controls playback** is enabled by default. The host can uncheck it to let everyone play, pause, seek, and change speed. The relay enforces this setting.
-- The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room.
+- The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room, but can join a new room with a different code. Removal notices apply to the original party tab; a fresh invite to another room remains joinable. Version 2.2.1 fixes stale removal notices hiding new invitations. After updating, reload the extension and refresh streaming tabs.
 - If the host leaves, control moves to an online participant. After an unexpected host disconnect, the relay allows 45 seconds for reconnection before transferring control.
 
 ## Voice and video calls
