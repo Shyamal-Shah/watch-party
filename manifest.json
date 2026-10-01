@@ -3,7 +3,8 @@
   "name": "Watch Party",
   "version": "1.0.0",
   "description": "Watch Netflix, Prime Video, and JioHotstar in sync with friends.",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "host_permissions": [
     "https://www.netflix.com/*",
     "https://www.primevideo.com/*",

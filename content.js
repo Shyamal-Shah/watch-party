@@ -44,6 +44,7 @@
       const messages = result[key]?.messages || [];
       messages.push({ name: party.name || "Guest", text, at: Date.now() });
       await chrome.storage.local.set({ [key]: { messages: messages.slice(-100) } }); input.value = "";
+      chrome.runtime.sendMessage({ type: "CHAT", code: party.code, name: party.name || "Guest", text }).catch(() => {});
     };
     const foot = document.createElement("div"); foot.className = "wp-foot"; foot.textContent = "Playback and chat sync across tabs in this browser.";
     panel.append(head, state, chat, compose, foot);

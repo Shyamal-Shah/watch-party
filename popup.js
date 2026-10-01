@@ -15,6 +15,7 @@ async function saveParty(code) {
   msg("");
 }
 getParty().then(showParty);
+chrome.storage.local.get("relayUrl", ({ relayUrl }) => { if (relayUrl) byId("relay-url").value = relayUrl; });
 byId("create").addEventListener("click", () => saveParty(createCode()));
 byId("join").addEventListener("click", async () => {
   const code = byId("code").value.trim().toUpperCase();
@@ -34,4 +35,17 @@ byId("open-party").addEventListener("click", async () => {
     chrome.tabs.sendMessage(tab.id, { type: "OPEN_PANEL" }).catch(() => {});
     window.close();
   } else msg("Open Netflix, Prime Video, or JioHotstar first.");
+});
+byId("save-relay").addEventListener("click", async () => {
+  const raw = byId("relay-url").value.trim();
+  if (!raw) { await chrome.storage.local.remove("relayUrl"); msg("Relay removed. This party is local to this browser."); return; }
+  let url;
+  try { url = new URL(raw); } catch { return msg("Enter a valid ws:// or wss:// URL."); }
+  if (!["ws:", "wss:", "http:", "https:"].includes(url.protocol)) return msg("Use a ws:// or wss:// relay URL.");
+  const origin = `${url.protocol === "wss:" || url.protocol === "https:" ? "https:" : "http:"}//${url.host}/*`;
+  const allowed = await chrome.permissions.request({ origins: [origin] });
+  if (!allowed) return msg("Chrome needs permission to connect to this relay.");
+  url.protocol = url.protocol === "https:" ? "wss:" : url.protocol === "http:" ? "ws:" : url.protocol;
+  await chrome.storage.local.set({ relayUrl: url.toString() });
+  msg("Relay saved. Your party will connect automatically.");
 });
