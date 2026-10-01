@@ -2,21 +2,23 @@ const http = require('node:http');
 const { createHash } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const P = require('./shared');
+const { readIceConfig } = require('./rtc-config');
 
-function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval = 5_000 } = {}) {
+function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval = 5_000, iceConfig = readIceConfig() } = {}) {
   const rooms = new Map();
   const server = http.createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    response.end(JSON.stringify({ ok: true, service: 'watch-party-relay', protocol: 2 }));
+    response.end(JSON.stringify({ ok: true, service: 'watch-party-relay', protocol: 2, maxParticipants: 2, voiceVideo: true }));
   });
-  const wss = new WebSocketServer({ server, maxPayload: 16_384 });
+  const wss = new WebSocketServer({ server, maxPayload: 65_536 });
   const send = (socket, packet) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(packet)); };
   function snapshot(room) {
     return {
+      capabilities: { voiceVideo: true, maxParticipants: 2 },
       code: room.code, hostId: room.hostId, hostOnly: room.hostOnly, revision: room.revision,
       mediaUrl: room.mediaUrl, playback: room.playback, messages: room.messages,
       participants: [...room.members.values()].filter(m => !room.banned.has(m.id)).map(m => ({
-        id: m.id, name: m.name, online: !!m.socket, buffering: m.buffering,
+        id: m.id, name: m.name, online: !!m.socket, buffering: m.buffering, call: m.call || null,
       })),
     };
   }
@@ -35,6 +37,7 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
     const member = room?.members.get(socket.memberId);
     if (!member || member.socket !== socket) return;
     member.socket = null;
+    member.call = null;
     member.offlineAt = explicit ? 0 : Date.now();
     member.buffering = false;
     room.touchedAt = Date.now();
@@ -72,9 +75,12 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
         }
         if (!room) return error('Room not found or expired. Ask the host to create a new party.', true);
         if (room.banned.has(id)) return error('You were removed from this party.', true);
-        if (!room.members.has(id) && room.members.size >= 50) return error('This room is full (50 participants).', true);
+        for (const [oldId, old] of room.members) {
+          if (!old.socket && oldId !== room.hostId && Date.now() - old.offlineAt >= hostGrace) room.members.delete(oldId);
+        }
+        if (!room.members.has(id) && room.members.size >= 2) return error('This party is full. Only two people can join.', true);
         const previous = room.members.get(id);
-        const member = { id, name: String(packet.name || 'Guest').trim().slice(0, 24) || 'Guest', socket, buffering: false, offlineAt: null };
+        const member = { id, name: String(packet.name || 'Guest').trim().slice(0, 24) || 'Guest', socket, buffering: false, offlineAt: null, call: null };
         room.members.set(id, member);
         if (previous?.socket) previous.socket.close(4001, 'Connection replaced');
         socket.room = room;
@@ -90,6 +96,34 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
       if (!room || member?.socket !== socket) return error('Join a room first.');
       room.touchedAt = Date.now();
       if (packet.type === 'leave') { detach(socket, true); socket.close(1000); return; }
+      if (packet.type === 'call-ready') {
+        if (typeof packet.session !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(packet.session)) return error('Invalid call session.');
+        member.call = { session: packet.session, mic: !!packet.mic, camera: !!packet.camera };
+        send(socket, { type: 'call-config', session: packet.session, ...iceConfig });
+        publish(room); return;
+      }
+      if (packet.type === 'call-stop' || packet.type === 'call-media') {
+        if (!member.call || member.call.session !== packet.session) return;
+        member.call = packet.type === 'call-stop' ? null : { session: packet.session, mic: !!packet.mic, camera: !!packet.camera };
+        publish(room); return;
+      }
+      if (packet.type === 'signal') {
+        const target = room.members.get(packet.to);
+        if (!member.call || member.call.session !== packet.session || target === member || !target?.socket || !target.call || target.call.session !== packet.peerSession) return;
+        const data = packet.data;
+        let safe;
+        if (data?.description && ['offer', 'answer'].includes(data.description.type) && typeof data.description.sdp === 'string' && data.description.sdp.length <= 48000) {
+          safe = { description: { type: data.description.type, sdp: data.description.sdp } };
+        } else if (data?.candidate && typeof data.candidate.candidate === 'string' && data.candidate.candidate.length <= 4096) {
+          const c = data.candidate;
+          if (c.sdpMid != null && (typeof c.sdpMid !== 'string' || c.sdpMid.length > 64)) return;
+          if (c.sdpMLineIndex != null && (!Number.isInteger(c.sdpMLineIndex) || c.sdpMLineIndex < 0 || c.sdpMLineIndex > 10)) return;
+          if (c.usernameFragment != null && (typeof c.usernameFragment !== 'string' || c.usernameFragment.length > 256)) return;
+          safe = { candidate: { candidate: c.candidate, sdpMid: c.sdpMid ?? null, sdpMLineIndex: c.sdpMLineIndex ?? null, usernameFragment: c.usernameFragment ?? null } };
+        } else return;
+        send(target.socket, { type: 'signal', from: member.id, session: member.call.session, peerSession: target.call.session, data: safe });
+        return;
+      }
       if (packet.type === 'settings') {
         if (member.id !== room.hostId) return error('Only the host can change room controls.');
         if (typeof packet.hostOnly === 'boolean') room.hostOnly = packet.hostOnly;

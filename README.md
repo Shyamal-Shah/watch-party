@@ -1,6 +1,6 @@
 # Watch Party
 
-A Chrome extension for watching Netflix, Prime Video, and JioHotstar together, with a Node.js WebSocket relay for people on different devices.
+A Chrome extension for watching Netflix, Prime Video, and JioHotstar together, with a Node.js WebSocket relay for two people on different devices, plus optional voice and video calls.
 
 ## Install or update
 
@@ -43,6 +43,39 @@ You can also paste an invite link directly into the popup. Joining by a six char
 - The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room.
 - If the host leaves, control moves to an online participant. After an unexpected host disconnect, the relay allows 45 seconds for reconnection before transferring control.
 
+## Voice and video calls
+
+1. Both people join the same watch party. A third person will see a room-full message.
+2. Choose **Voice / video call** in the popup or player panel. A separate call window opens, so calls survive streaming-page reloads and episode changes.
+3. Choose **Join voice call** and allow microphone access, or choose **Listen only** to receive your friend's media without granting device access.
+4. Choose **Turn camera on** for video. Camera access is requested separately; cameras start off.
+5. **Mute mic** and **Turn camera off** stop those capture tracks. **Mute speakers** silences incoming call audio. **Leave call** or closing the call window releases your devices while keeping the watch party active.
+
+The call window shows local and remote previews, microphone/camera status, connection errors, and a reconnect button. Leaving the party or being removed also releases your camera and microphone. During a temporary relay outage, enabled local devices remain active while the call reconnects; their status stays visible in the call window.
+
+Media uses a direct WebRTC connection when possible. The Node relay only forwards call setup messages between the two room members; it does not receive or record audio/video. Both people must opt into the call. An updated 2.1 relay is required; `/health` reports `"voiceVideo": true` and `"maxParticipants": 2`.
+
+### Connecting across restrictive networks
+
+By default, callers use Google's public STUN server (`stun:stun.l.google.com:19302`). Some network combinations require a TURN media relay. The Render WebSocket server does not provide TURN itself.
+
+To enable TURN, set `ICE_SERVERS` in your relay hosting environment to a JSON array supplied by your TURN provider, for example:
+
+```json
+[
+  { "urls": "stun:stun.l.google.com:19302" },
+  {
+    "urls": ["turn:turn.example.com:3478?transport=udp", "turns:turn.example.com:5349?transport=tcp"],
+    "username": "YOUR_TURN_USERNAME",
+    "credential": "YOUR_TURN_CREDENTIAL"
+  }
+]
+```
+
+These are example hostnames and credentials: replace them with a working TURN service, keep the configuration in your hosting environment, and restart the relay. TURN credentials are supplied to participants who join calls, so use provider credentials with appropriate expiry and usage limits. `ICE_TRANSPORT_POLICY=relay` forces calls through TURN and requires a TURN entry; the default `all` tries direct connections too.
+
+The call implementation follows the [WebRTC offer/answer model](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Signaling_and_video_calling) and requests devices through [getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia). Internet calling still needs manual checks on separate networks with your chosen TURN service.
+
 ## Connection recovery
 
 The popup and player panel show connecting, connected, reconnecting, and error states. Interrupted connections retry with increasing delays up to approximately 30 seconds. **Reconnect** retries immediately. A heartbeat every 20 seconds maintains the Chrome service worker connection and detects stale sockets.
@@ -51,7 +84,7 @@ Chat sent during a temporary outage appears as **Waiting for delivery**. Up to 5
 
 ## Current limits
 
-Rooms and chat history are held in relay memory. An empty room expires after 10 minutes, and a relay restart clears rooms. In that case, the extension shows an error and the host must create a new party. Rooms are limited to 50 participant identities. Removal is tied to an extension identity, not an account; a person using another browser profile can join again if they know the invite.
+Rooms and chat history are held in relay memory. An empty room expires after 10 minutes, and a relay restart clears rooms. In that case, the extension shows an error and the host must create a new party. Rooms are limited to two participant identities, including temporarily reconnecting participants. Removal is tied to an extension identity, not an account; a person using another browser profile can join again if they know the invite.
 
 Player control uses the site's HTML video element. Changes to streaming players, ads, regional title differences, DRM behavior, and browser autoplay restrictions may affect synchronization. Real Netflix, Prime Video, and JioHotstar playback still needs manual checks with subscribed accounts.
 
@@ -63,4 +96,4 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-The relay tests exercise actual WebSocket clients, permissions, reconnect identity, host transfer, message deduplication, room expiry, and invite validation. The browser test loads the extension in two separate Chromium profiles, with a generated WebM video on an intercepted streaming page. It covers invite joining, late sync, guest control enforcement, shared controls, reconnect chat, player reload/replacement, running playback, buffering, following a new title, and removal. It does not access paid streaming content.
+The relay tests exercise actual WebSocket clients, permissions, reconnect identity, host transfer, message deduplication, room expiry, and invite validation. The browser tests load the extension in two separate Chromium profiles, with a generated WebM video on an intercepted streaming page. It covers invite joining, late sync, guest control enforcement, shared controls, reconnect chat, player reload/replacement, running playback, buffering, following a new title, and removal. They also use fake microphones/cameras with real WebRTC connections to verify received audio packets, video frames, both offer directions, listen-only mode, permission denial, device toggles, closing/reopening calls, reconnection, and device cleanup on removal. They do not access paid streaming content or real user devices.

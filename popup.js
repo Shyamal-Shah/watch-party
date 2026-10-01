@@ -18,7 +18,7 @@ function show(view) {
     $('room-code').textContent = party.code;
     $('connection').textContent = ({ connected: 'Connected', connecting: 'Connecting to party…', reconnecting: 'Reconnecting automatically…', error: 'Unable to connect' })[view.status] || view.status;
     const count = view.room?.participants.filter(m => m.online).length || 0;
-    $('party-info').textContent = `${count} watching${view.meId && view.meId === view.room?.hostId ? ' · You are the host' : ''}${view.pending?.length ? ` · ${view.pending.length} messages waiting` : ''}`;
+    $('party-info').textContent = `${count} / 2 watching${view.meId && view.meId === view.room?.hostId ? ' · You are the host' : ''}${view.pending?.length ? ` · ${view.pending.length} messages waiting` : ''}`;
     $('copy-invite').disabled = !view.room || view.status !== 'connected';
     $('retry').classList.toggle('hidden', view.status === 'connected');
   }
@@ -65,6 +65,7 @@ $('copy-invite').onclick = async () => {
   try { await navigator.clipboard.writeText(P.invite(current.room.mediaUrl, current.party.code, current.party.relayUrl)); msg('Invite copied. Your friends can open this link with the extension installed.'); } catch (e) { msg(e.message); }
 };
 $('leave').onclick = async () => { await request({ type: 'LEAVE' }); msg(''); show(await request({ type: 'GET_VIEW' })); };
+$('open-call').onclick = () => request({ type: 'OPEN_CALL' }).catch(e => msg(e.message));
 $('retry').onclick = () => request({ type: 'RETRY' }).catch(e => msg(e.message));
 $('open-party').onclick = async () => {
   try {

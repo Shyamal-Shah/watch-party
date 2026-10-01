@@ -139,3 +139,66 @@ test('invite URLs round-trip server and title without accepting lookalike domain
   assert.throws(() => P.relayUrl('wss://user:password@example.com'));
   assert.equal(P.position({ time: 10, paused: false, buffering: false, rate: 2, updatedAt: 1000 }, 2000), 12);
 });
+
+test('parties admit two people, reserve reconnecting slots, and free explicit departures', async t => {
+  const { client, url } = await setup(t);
+  const host = await client(); host.join('ABC123', true); await host.wait(p => p.type === 'joined');
+  const guest = await client(); guest.join('ABC123'); await guest.wait(p => p.type === 'joined');
+  const third = await client(); third.join('ABC123');
+  assert.match((await third.wait(p => p.type === 'error')).message, /Only two/);
+  guest.ws.close(); await once(guest.ws, 'close');
+  third.join('ABC123'); assert.match((await third.wait(p => p.type === 'error')).message, /Only two/);
+  const returned = await client(guest.token); returned.join('ABC123');
+  const restored = await returned.wait(p => p.type === 'joined');
+  assert.equal(restored.room.participants.length, 2);
+  assert.equal(restored.room.capabilities.maxParticipants, 2);
+  returned.send({ type: 'leave' }); await once(returned.ws, 'close');
+  third.join('ABC123'); assert.equal((await third.wait(p => p.type === 'joined')).room.participants.length, 2);
+  const health = await (await fetch(url.replace('ws:', 'http:') + '/health')).json();
+  assert.equal(health.voiceVideo, true); assert.equal(health.maxParticipants, 2);
+});
+
+test('call signaling is opt-in, scoped to the room and session, and cleared on disconnect', async t => {
+  const { client, relay } = await setup(t, { iceConfig: { iceServers: [], iceTransportPolicy: 'all' } });
+  const host = await client(); host.join('ABC123', true); const a = await host.wait(p => p.type === 'joined');
+  const guest = await client(); guest.join('ABC123'); const b = await guest.wait(p => p.type === 'joined');
+  const outsider = await client(); outsider.join('XYZ123', true); const c = await outsider.wait(p => p.type === 'joined');
+  const aSession = 'a'.repeat(32), bSession = 'b'.repeat(32), cSession = 'c'.repeat(32);
+  const signal = { type: 'signal', session: aSession, peerSession: bSession, to: b.meId, data: { description: { type: 'offer', sdp: 'v=0' } } };
+  host.send({ type: 'call-media', mic: true }); // Cannot opt in without a valid session.
+  host.send({ type: 'ping', clientTime: 1 }); await host.wait(p => p.type === 'pong');
+  assert.equal(relay.rooms.get('ABC123').members.get(a.meId).call, null);
+  host.send(signal); // Not in a call yet.
+  host.send({ type: 'call-ready', session: aSession, mic: true, camera: false });
+  assert.deepEqual((await host.wait(p => p.type === 'call-config')).iceServers, []);
+  guest.send({ type: 'call-ready', session: bSession, mic: false, camera: false });
+  await guest.wait(p => p.type === 'call-config');
+  assert.equal(guest.messages.filter(p => p.type === 'signal').length, 0);
+  outsider.send({ type: 'call-ready', session: cSession }); await outsider.wait(p => p.type === 'call-config');
+  host.send({ ...signal, to: c.meId, peerSession: cSession }); // Cannot signal across rooms.
+  host.send({ ...signal, peerSession: 'stale-session-00000' });
+  host.send({ ...signal, from: 'forged-sender' });
+  const offer = await guest.wait(p => p.type === 'signal');
+  assert.equal(offer.from, a.meId); assert.equal(offer.session, aSession);
+  assert.equal(offer.peerSession, bSession);
+  assert.equal(outsider.messages.filter(p => p.type === 'signal').length, 0);
+  assert.equal(guest.messages.filter(p => p.type === 'signal').length, 0);
+  assert.equal(relay.rooms.get('ABC123').messages.length, 0);
+  host.send({ type: 'call-media', session: aSession, mic: false, camera: true });
+  await guest.wait(p => p.room?.participants.some(m => m.id === a.meId && m.call?.camera));
+  host.ws.close(); await once(host.ws, 'close');
+  const offline = await guest.wait(p => p.room?.participants.some(m => m.id === a.meId && !m.online));
+  assert.equal(offline.room.participants.find(m => m.id === a.meId).call, null);
+  guest.send({ type: 'call-stop', session: bSession });
+  await guest.wait(p => p.room?.participants.every(m => m.call === null));
+});
+
+test('TURN configuration validates URLs and requires TURN for relay-only calls', () => {
+  const { readIceConfig } = require('../rtc-config');
+  assert.throws(() => readIceConfig({ ICE_SERVERS: 'not json' }));
+  assert.throws(() => readIceConfig({ ICE_SERVERS: '[{"urls":"https://example.com"}]' }));
+  assert.throws(() => readIceConfig({ ICE_SERVERS: '[]', ICE_TRANSPORT_POLICY: 'relay' }));
+  const config = readIceConfig({ ICE_SERVERS: '[{"urls":"turns:example.com:5349","username":"test","credential":"secret"}]', ICE_TRANSPORT_POLICY: 'relay' });
+  assert.equal(config.iceTransportPolicy, 'relay');
+  assert.equal(config.iceServers[0].username, 'test');
+});

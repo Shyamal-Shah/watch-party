@@ -3,11 +3,12 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { once } = require('node:events');
+const { createHash } = require('node:crypto');
 const { createRelay } = require('../server');
 const P = require('../shared');
 
-test('two Chrome profiles: invite, late join, sync, controls, reconnect chat and removal', async () => {
-  const relay = createRelay();
+for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voice/video (${hostOffers ? 'host' : 'guest'} makes the offer)`, async () => {
+  const relay = createRelay({ iceConfig: { iceServers: [], iceTransportPolicy: 'all' } });
   relay.server.listen(0, '127.0.0.1'); await once(relay.server, 'listening');
   const relayUrl = `ws://127.0.0.1:${relay.server.address().port}/`;
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'watch-party-e2e-'));
@@ -16,19 +17,26 @@ test('two Chrome profiles: invite, late join, sync, controls, reconnect chat and
   // Pregrant the test relay; production still asks via Chrome's permission prompt.
   manifest.host_permissions = [...manifest.host_permissions, 'http://127.0.0.1/*'];
   await fs.writeFile(path.join(extension, 'manifest.json'), JSON.stringify(manifest));
-  for (const file of ['shared.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css']) await fs.copyFile(path.join(__dirname, '..', file), path.join(extension, file));
+  for (const file of ['shared.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', file), path.join(extension, file));
   const video = await fs.readFile(path.join(__dirname, 'fixtures/video.webm'));
+  const identities = ['0'.repeat(64), '1'.repeat(64)].map(value => {
+    const secret = createHash('sha256').update(value + '|' + relayUrl).digest('hex');
+    return { value, id: createHash('sha256').update(secret).digest('hex').slice(0, 24) };
+  }).sort((a, b) => a.id.localeCompare(b.id));
   const contexts = [];
   const errors = [];
   async function browser(profile) {
     const context = await chromium.launchPersistentContext(path.join(temp, profile), {
-      headless: true, channel: 'chromium', args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--autoplay-policy=no-user-gesture-required'],
+      headless: true, channel: 'chromium', args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
     });
     contexts.push(context);
     await context.route('https://www.netflix.com/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Watch Party test player</title><body style="background:#18131e;color:white"><h1>Test movie</h1><video controls muted style="width:640px;height:360px" src="data:video/webm;base64,${video.toString('base64')}"></video></body>` }));
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const id = new URL(worker.url()).host;
     const popup = await context.newPage(); await popup.goto(`chrome-extension://${id}/popup.html`);
+    await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'GET_VIEW' }));
+    const identity = identities[(profile === 'host') === hostOffers ? 0 : 1].value;
+    await worker.evaluate(value => { token = value; }, identity);
     context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
     return { context, worker, popup, id };
   }
@@ -83,6 +91,54 @@ test('two Chrome profiles: invite, late join, sync, controls, reconnect chat and
     await expect.poll(() => guestVideo.locator('video').evaluate(v => v.paused)).toBe(true);
     await hostVideo.locator('video').evaluate(v => v.dispatchEvent(new Event('playing')));
     await expect.poll(() => guestVideo.locator('video').evaluate(v => v.paused)).toBe(false);
+    // Calls use real peer connections and fake devices in two separate Chrome profiles.
+    const hostCallPromise = host.context.waitForEvent('page');
+    await hostVideo.getByRole('button', { name: 'Voice / video call' }).click();
+    const hostCall = await hostCallPromise;
+    await hostCall.waitForLoadState();
+    await hostCall.evaluate(() => {
+      window.restoreMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Denied in test', 'NotAllowedError'));
+    });
+    await hostCall.getByRole('button', { name: 'Join voice call' }).click();
+    await expect(hostCall.locator('#call-message')).toContainText('access was denied');
+    expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject)).toBeNull();
+    await hostCall.evaluate(() => { navigator.mediaDevices.getUserMedia = window.restoreMedia; });
+    await hostCall.getByRole('button', { name: 'Join voice call' }).click();
+    await expect(hostCall.locator('#local-media')).toContainText('Microphone on');
+    const guestCallPromise = guest.context.waitForEvent('page');
+    await guestVideo.getByRole('button', { name: 'Voice / video call' }).click();
+    let guestCall = await guestCallPromise;
+    // A user can receive the call without granting device access.
+    await guestCall.getByRole('button', { name: 'Listen only' }).click();
+    await expect(hostCall.locator('#call-status')).toHaveText('Call connected', { timeout: 15000 });
+    await expect(guestCall.locator('#call-status')).toHaveText('Call connected');
+    await expect(guestCall.locator('#local-media')).toContainText('Microphone off');
+    await expect.poll(() => guestCall.evaluate(async () => {
+      const stats = await peer.pc.getStats();
+      return [...stats.values()].filter(s => s.type === 'inbound-rtp' && s.kind === 'audio').reduce((sum, s) => sum + s.bytesReceived, 0);
+    })).toBeGreaterThan(0);
+    await guestCall.getByRole('button', { name: 'Turn mic on', exact: true }).click();
+    await hostCall.getByRole('button', { name: 'Turn camera on', exact: true }).click();
+    await guestCall.getByRole('button', { name: 'Turn camera on', exact: true }).click();
+    await expect.poll(() => guestCall.locator('#remote-video').evaluate(v => v.videoWidth)).toBeGreaterThan(0);
+    await expect.poll(() => hostCall.locator('#remote-video').evaluate(v => v.videoWidth)).toBeGreaterThan(0);
+    await hostCall.getByRole('button', { name: 'Mute mic', exact: true }).click();
+    await expect(guestCall.locator('#remote-media')).toContainText('Mic off');
+    expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject.getAudioTracks().length)).toBe(0);
+    await guestCall.getByRole('button', { name: 'Mute speakers', exact: true }).click();
+    expect(await guestCall.locator('#remote-video').evaluate(v => v.muted)).toBe(true);
+    await hostCall.getByRole('button', { name: 'Turn camera off', exact: true }).click();
+    await expect(guestCall.locator('#remote-placeholder')).toBeVisible();
+    expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject.getVideoTracks().length)).toBe(0);
+    await guestCall.close();
+    await expect.poll(() => [...relay.rooms.get('ABC123').members.values()].find(m => m.name === 'Guest').call).toBeNull();
+    await expect(guestVideo.locator('#wp-root .status')).toContainText('Connected');
+    const reopened = guest.context.waitForEvent('page');
+    await guestVideo.getByRole('button', { name: 'Voice / video call' }).click();
+    guestCall = await reopened;
+    await guestCall.getByRole('button', { name: 'Join voice call' }).click();
+    await expect(guestCall.locator('#call-status')).toHaveText('Call connected', { timeout: 15000 });
     // A dropped connection queues chat, then delivers it once after rejoining.
     let block = true;
     const refuse = socket => { if (block) socket.close(); };
@@ -101,8 +157,11 @@ test('two Chrome profiles: invite, late join, sync, controls, reconnect chat and
     expect(room.messages.filter(m => m.text === 'Message during reconnect')).toHaveLength(1);
     expect([...room.members.values()].find(m => m.name === 'Guest').id).toBe(guestId);
     relay.wss.off('connection', refuse);
+    await expect(guestCall.locator('#call-status')).toHaveText('Call connected', { timeout: 15000 });
+    await expect(hostCall.locator('#call-status')).toHaveText('Call connected');
     // Reloading a player restores state rather than resetting the room.
     await guestVideo.reload();
+    await expect(guestCall.locator('#call-status')).toHaveText('Call connected');
     await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime)).toBeGreaterThan(29);
     // Replacing the video element on a single-page site also restores sync.
     await guestVideo.locator('video').evaluate(v => v.replaceWith(v.cloneNode(true)));
@@ -114,6 +173,12 @@ test('two Chrome profiles: invite, late join, sync, controls, reconnect chat and
     await expect(guestVideo.locator('#wp-root .status')).toContainText('Connected');
     await hostVideo.getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(guestVideo.locator('#wp-root .removed')).toContainText('removed you');
+    await expect(guestCall.locator('#call-status')).toContainText('party ended');
+    expect(await guestCall.locator('#local-video').evaluate(v => v.srcObject)).toBeNull();
+    await hostCall.getByRole('button', { name: 'Leave call', exact: true }).click();
+    expect(await hostCall.locator('#local-video').evaluate(v => v.srcObject)).toBeNull();
+    await expect(hostVideo.locator('#wp-root .status')).toContainText('Connected');
+    await hostCall.screenshot({ path: 'test-results/call-window.png' });
     expect(errors).toEqual([]);
     await hostVideo.screenshot({ path: 'test-results/host-party.png' });
   } finally {

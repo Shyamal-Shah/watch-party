@@ -66,6 +66,7 @@
     retry = button('Reconnect', actions, () => { localError = ''; request({ type: 'RETRY' }); });
     follow = button('Open host’s video', actions, () => request({ type: 'OPEN_VIDEO' }));
     unlock = button('Resume sync', actions, async () => { autoplayBlocked = false; try { await player?.play(); applyState(true); } catch { autoplayBlocked = true; } render(); });
+    button('Voice / video call', actions, () => request({ type: 'OPEN_CALL' }));
     button('Leave', actions, () => request({ type: 'LEAVE' }));
     hostSettings = el('label', '', panel, 'settings');
     hostOnly = el('input', '', hostSettings); hostOnly.type = 'checkbox';
@@ -99,7 +100,7 @@
     buildPanel(); if (!panel) return;
     const connected = view.status === 'connected';
     const count = view.room?.participants.filter(p => p.online).length || 0;
-    statusLine.textContent = `${{ connected: 'Connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Unable to join', removed: 'Removed' }[view.status] || 'Offline'} · ${count} watching${isHost() ? ' · You are the host' : ''}`;
+    statusLine.textContent = `${{ connected: 'Connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Unable to join', removed: 'Removed' }[view.status] || 'Offline'} · ${count} / 2 watching${isHost() ? ' · You are the host' : ''}`;
     const different = view.room && P.mediaKey(view.room.mediaUrl) !== P.mediaKey(location.href);
     note.textContent = view.error || localError || (!player ? 'Waiting for a video player…' : different ? 'The host is watching a different video.' : autoplayBlocked ? 'Chrome needs a click to resume playback.' : buffering ? 'Your video is buffering…' : view.room?.playback?.buffering ? 'Waiting for the host to finish buffering…' : !view.room?.playback ? 'Waiting for the host’s playback…' : view.room.hostOnly ? 'Playback follows the host.' : 'Everyone can control playback.');
     inviteButton.disabled = !connected || !view.room;
@@ -110,7 +111,7 @@
       lastPeople = roster; people.replaceChildren();
       for (const member of view.room?.participants || []) {
         const row = el('div', '', people, 'person');
-        el('span', `${member.name}${member.id === view.room.hostId ? ' · Host' : ''}${member.id === view.meId ? ' (you)' : ''}${!member.online ? ' · Reconnecting' : member.buffering ? ' · Buffering' : ''}`, row);
+        el('span', `${member.name}${member.id === view.room.hostId ? ' · Host' : ''}${member.id === view.meId ? ' (you)' : ''}${!member.online ? ' · Reconnecting' : member.buffering ? ' · Buffering' : ''}${member.call ? ' · In call' : ''}`, row);
         if (isHost() && member.id !== view.meId) {
           const kick = button('Remove', row, () => request({ type: 'KICK', id: member.id }));
           kick.disabled = !connected;

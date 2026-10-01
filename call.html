@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Watch Party call</title><link rel="stylesheet" href="call.css"></head>
+<body>
+<main>
+  <header><span class="mark">✦</span><div><h1>Watch Party call</h1><p id="room-label">Two people. One movie night.</p></div></header>
+  <p id="call-status" role="status" aria-live="polite">Join a party to start a call.</p>
+  <section class="tile remote-tile" aria-label="Your friend">
+    <video id="remote-video" autoplay playsinline></video>
+    <div id="remote-placeholder" class="placeholder">Waiting for your friend</div>
+    <div class="caption"><span id="remote-name">Your friend</span><span id="remote-media"></span></div>
+  </section>
+  <section class="tile local-tile" aria-label="Your preview">
+    <video id="local-video" autoplay playsinline muted></video>
+    <div id="local-placeholder" class="placeholder">Your camera is off</div>
+    <div class="caption"><span>You</span><span id="local-media">Microphone off · Camera off</span></div>
+  </section>
+  <div id="join-controls" class="controls">
+    <button id="join-voice" class="primary">Join voice call</button>
+    <button id="listen">Listen only</button>
+  </div>
+  <div id="call-controls" class="controls" hidden>
+    <button id="mic" aria-pressed="false">Turn mic on</button>
+    <button id="camera" aria-pressed="false">Turn camera on</button>
+    <button id="speaker" aria-pressed="false">Mute speakers</button>
+    <button id="retry-call">Reconnect call</button>
+    <button id="hangup" class="danger">Leave call</button>
+  </div>
+  <button id="enable-audio" class="primary" hidden>Play your friend’s audio</button>
+  <p id="call-message" role="alert"></p>
+  <p class="help">Your microphone and camera stay off until you choose to enable them. Closing this window ends your call; the watch party continues.</p>
+</main>
+<script src="call.js"></script>
+</body></html>

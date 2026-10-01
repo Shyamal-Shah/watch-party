@@ -49,7 +49,7 @@
   function validRoom(room) {
     return !!room && /^[A-Z0-9]{6}$/.test(room.code) && typeof room.hostId === 'string'
       && typeof room.hostOnly === 'boolean' && Number.isInteger(room.revision) && !!mediaUrl(room.mediaUrl)
-      && Array.isArray(room.participants) && room.participants.length <= 50
+      && Array.isArray(room.participants) && room.participants.length <= 2
       && room.participants.every(m => m && typeof m.id === 'string' && typeof m.name === 'string' && typeof m.online === 'boolean')
       && Array.isArray(room.messages) && room.messages.length <= 100
       && room.messages.every(m => m && typeof m.id === 'string' && typeof m.memberId === 'string' && typeof m.name === 'string' && typeof m.text === 'string')

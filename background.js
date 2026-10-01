@@ -13,6 +13,9 @@ let lastSeen = 0;
 let halfRtt = 0;
 let pending = [];
 let stopped = false;
+let callTabId = null;
+let callSession = null;
+let callPort = null;
 let chain = Promise.resolve();
 const enqueue = work => {
   const result = chain.then(work);
@@ -74,6 +77,12 @@ async function connect() {
       if (Number.isFinite(packet.clientTime)) halfRtt = Math.min(1000, Math.max(0, Date.now() - packet.clientTime) / 2);
       return;
     }
+    if (['signal', 'call-config'].includes(packet.type)) {
+      if (callTabId != null && callSession && (packet.type === 'signal' ? packet.peerSession : packet.session) === callSession) {
+        try { callPort?.postMessage({ type: 'CALL_PACKET', packet }); } catch { /* The call window closed. */ }
+      }
+      return;
+    }
     if (packet.type === 'removed') {
       stopped = true; teardown(); party = null; room = null; pending = [];
       status = 'removed'; error = packet.message;
@@ -119,6 +128,7 @@ async function connect() {
   ws.addEventListener('error', () => { if (socket === ws) ws.close(); });
 }
 async function leave() {
+  callSession = null;
   send({ type: 'leave' });
   teardown(); party = null; room = null; meId = ''; pending = [];
   status = 'idle'; error = ''; stopped = false; attempt = 0;
@@ -134,6 +144,38 @@ async function handle(message, sender) {
     return {};
   }
   const extensionPage = sender.url?.startsWith(chrome.runtime.getURL(''));
+  if (message.type === 'OPEN_CALL' && (bound || extensionPage)) {
+    if (!party || status !== 'connected') throw new Error('Connect to a party first.');
+    if (!room?.capabilities?.voiceVideo) throw new Error('The host needs to update the relay for voice and video calls.');
+    const tab = callTabId != null ? await chrome.tabs.get(callTabId).catch(() => null) : null;
+    if (tab && tab.url?.startsWith(chrome.runtime.getURL('call.html'))) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+      await chrome.tabs.update(tab.id, { active: true });
+    } else {
+      const window = await chrome.windows.create({ url: chrome.runtime.getURL('call.html'), type: 'popup', width: 430, height: 720 });
+      callTabId = window.tabs?.[0]?.id ?? null;
+      await chrome.storage.session.set({ callTabId });
+    }
+    return {};
+  }
+  const callPage = sender.url === chrome.runtime.getURL('call.html') && sender.tab?.id === callTabId;
+  if (message.type.startsWith('CALL_')) {
+    if (!callPage) throw new Error('Open the call window from the party controls.');
+    if (message.type === 'CALL_STOP') {
+      if (callSession === message.session) { send({ type: 'call-stop', session: callSession }); callSession = null; }
+      return {};
+    }
+    if (!party || status !== 'connected' || !room?.capabilities?.voiceVideo) throw new Error('Wait for the party to reconnect.');
+    if (message.type === 'CALL_READY') {
+      if (message.code !== party.code) throw new Error('The party changed. Join the new call when you are ready.');
+      callSession = message.session;
+      send({ type: 'call-ready', session: callSession, mic: !!message.mic, camera: !!message.camera });
+    } else if (message.session === callSession) {
+      if (message.type === 'CALL_SIGNAL') send({ type: 'signal', session: callSession, to: message.to, peerSession: message.peerSession, data: message.data });
+      if (message.type === 'CALL_MEDIA') send({ type: 'call-media', session: callSession, mic: !!message.mic, camera: !!message.camera });
+    }
+    return {};
+  }
   if (message.type === 'START_PARTY' && extensionPage) {
     const relayUrl = P.relayUrl(message.relayUrl);
     if (!await chrome.permissions.contains({ origins: [P.permissionOrigin(relayUrl)] })) throw new Error('Allow access to the relay server first.');
@@ -175,14 +217,39 @@ async function handle(message, sender) {
   }
   return {};
 }
+chrome.runtime.onConnect.addListener(port => {
+  if (port.name !== 'call-window') return;
+  enqueue(async () => {
+    if (port.sender?.url !== chrome.runtime.getURL('call.html') || port.sender.tab?.id !== callTabId) { port.disconnect(); return; }
+    const previous = callPort;
+    callPort = port;
+    if (previous) {
+      send({ type: 'call-stop', session: callSession }); callSession = null;
+      previous.disconnect();
+    }
+    port.onDisconnect.addListener(() => enqueue(async () => {
+      if (callPort !== port) return;
+      callPort = null;
+      send({ type: 'call-stop', session: callSession }); callSession = null;
+    }));
+  });
+});
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   enqueue(() => handle(message, sender)).then(respond, e => respond({ rpcError: e.message }));
   return true;
 });
-chrome.tabs.onRemoved.addListener(id => enqueue(async () => { if (party?.tabId === id) await leave(); }));
+chrome.tabs.onRemoved.addListener(id => enqueue(async () => {
+  if (callTabId === id) {
+    send({ type: 'call-stop', session: callSession }); callSession = null; callTabId = null;
+    await chrome.storage.session.remove('callTabId');
+  }
+  if (party?.tabId === id) await leave();
+}));
 chrome.alarms.create('relay-recovery', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(() => enqueue(connect));
 enqueue(async () => {
+  const call = await chrome.storage.session.get('callTabId');
+  callTabId = call.callTabId ?? null;
   const saved = await chrome.storage.local.get(['party', 'identityToken', 'pendingChats']);
   token = saved.identityToken || Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, '0')).join('');
   await chrome.storage.local.set({ identityToken: token });
