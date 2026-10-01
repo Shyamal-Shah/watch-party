@@ -1,7 +1,7 @@
 const http = require('node:http');
 const { createHash } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
-const P = require('./shared');
+const P = require('./extension/shared');
 const { readIceConfig } = require('./rtc-config');
 
 function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval = 5_000, iceConfig = readIceConfig() } = {}) {

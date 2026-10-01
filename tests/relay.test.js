@@ -4,7 +4,7 @@ const { randomBytes } = require('node:crypto');
 const { once } = require('node:events');
 const { WebSocket } = require('ws');
 const { createRelay } = require('../server');
-const P = require('../shared');
+const P = require('../extension/shared');
 const mediaUrl = 'https://www.netflix.com/watch/123';
 const secret = () => randomBytes(32).toString('hex');
 

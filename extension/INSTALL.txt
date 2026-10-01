@@ -1,0 +1,20 @@
+Watch Party - install in Chrome
+
+1. Extract the ZIP into a folder you will keep on your computer.
+2. Open chrome://extensions in Chrome (version 116 or later).
+3. Turn on Developer mode.
+4. Click Load unpacked and select the extracted folder containing manifest.json.
+5. Open or refresh Netflix, Prime Video, or JioHotstar.
+6. Open Watch Party, enter your name, and start a party or paste an invite link.
+7. Allow access to the relay server when Chrome asks.
+
+The shared relay server is already configured. You do not need Node.js,
+Python, npm, or a local relay server to use this extension.
+Both people need the extension and access to the same streaming title.
+
+To update: extract the newer ZIP into the same folder, then click Reload
+on Watch Party at chrome://extensions and refresh your streaming tabs.
+Keep the folder in place while using the extension.
+
+Chrome installation guide:
+https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked

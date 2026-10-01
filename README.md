@@ -5,11 +5,27 @@ A Chrome extension for watching Netflix, Prime Video, and JioHotstar together, w
 ## Install or update
 
 1. Use Chrome 116 or later and open `chrome://extensions`.
-2. Enable **Developer mode**, choose **Load unpacked**, and select this project folder.
+2. Enable **Developer mode**, choose **Load unpacked**, and select this project's **extension/** folder (the folder containing `manifest.json`).
 3. When updating, click **Reload** on the extension and refresh your streaming tabs.
 4. Voice/video calls need a version 2.1 or later relay. This 2.2 extension update works with that relay without redeployment. Version 2 uses a new room protocol; create a new party after upgrading from version 1.
 
 Each participant needs the extension and access to the same streaming title. The extension synchronizes each person's player; it does not transmit the movie.
+
+**Moving from the old layout:** disable the copy loaded from the repository root, then use **Load unpacked** to load `extension/`. Start a new party after both people switch. A changed installation path may give the unpacked extension a new identity, so you may need to re-enter preferences and grant permissions again.
+
+## Package and share
+
+The `extension/` folder contains the complete Chrome extension. You can zip that folder directly, or build a release ZIP from the repository root:
+
+```sh
+npm run package:extension
+```
+
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.0.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+
+Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
+
+The relay source (`server.js`, `rtc-config.js`) and npm files stay at the repository root. `server.js` imports the shared protocol helpers from `extension/shared.js`, so deploy the repository with that folder included. Render's build and start commands remain `npm ci` and `npm start`.
 
 ## Run the relay
 

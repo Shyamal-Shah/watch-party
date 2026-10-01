@@ -5,7 +5,7 @@ const os = require('node:os');
 const { once } = require('node:events');
 const { createHash } = require('node:crypto');
 const { createRelay } = require('../server');
-const P = require('../shared');
+const P = require('../extension/shared');
 
 for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voice/video (${hostOffers ? 'host' : 'guest'} makes the offer)`, async () => {
   const relay = createRelay({ iceConfig: { iceServers: [], iceTransportPolicy: 'all' } });
@@ -13,11 +13,11 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
   const relayUrl = `ws://127.0.0.1:${relay.server.address().port}/`;
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'watch-party-e2e-'));
   const extension = path.join(temp, 'extension'); await fs.mkdir(extension);
-  const manifest = require('../manifest.json');
+  const manifest = require('../extension/manifest.json');
   // Pregrant the test relay; production still asks via Chrome's permission prompt.
   manifest.host_permissions = [...manifest.host_permissions, 'http://127.0.0.1/*'];
   await fs.writeFile(path.join(extension, 'manifest.json'), JSON.stringify(manifest));
-  for (const file of ['shared.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', file), path.join(extension, file));
+  for (const file of ['shared.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', 'extension', file), path.join(extension, file));
   const video = await fs.readFile(path.join(__dirname, 'fixtures/video.webm'));
   const identities = ['0'.repeat(64), '1'.repeat(64)].map(value => {
     const secret = createHash('sha256').update(value + '|' + relayUrl).digest('hex');

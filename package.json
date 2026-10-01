@@ -5,6 +5,7 @@
   "description": "WebSocket relay for the Watch Party Chrome extension",
   "scripts": {
     "start": "node server.js",
+    "package:extension": "python3 scripts/package-extension.py",
     "test": "node --test tests/*.test.js",
     "test:browser": "playwright test"
   },
