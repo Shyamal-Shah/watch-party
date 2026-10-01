@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Party",
+  "version": "1.0.0",
+  "description": "Watch Netflix, Prime Video, and JioHotstar in sync with friends.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://www.netflix.com/*",
+    "https://www.primevideo.com/*",
+    "https://www.amazon.com/gp/video/*",
+    "https://www.jiohotstar.com/*",
+    "https://www.hotstar.com/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Watch Party" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": [
+      "https://www.netflix.com/*",
+      "https://www.primevideo.com/*",
+      "https://www.amazon.com/gp/video/*",
+      "https://www.jiohotstar.com/*",
+      "https://www.hotstar.com/*"
+    ],
+    "js": ["content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }]
+}
