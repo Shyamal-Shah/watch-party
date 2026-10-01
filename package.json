@@ -1,8 +1,20 @@
 {
   "name": "watch-party-relay",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "WebSocket relay for the Watch Party Chrome extension",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "ws": "^8.18.0" }
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

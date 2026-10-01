@@ -2,15 +2,33 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Watch Party</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-  <main class="app">
-    <header><div class="brand-mark">✦</div><div><div class="eyebrow">TOGETHER, IN SYNC</div><h1>Watch Party</h1></div></header>
-    <p class="intro">Make movie night feel like movie night.</p>
-    <div class="services"><span class="service n">N</span><span class="service p">▶</span><span class="service j">J</span><span>Netflix · Prime Video · JioHotstar</span></div>
-    <section id="active" class="active hidden"><div class="active-label"><span class="live-dot"></span> YOUR PARTY IS LIVE</div><div class="room-row"><div><span class="muted">Room code</span><strong id="room-code"></strong></div><button id="copy" class="copy">Copy</button></div><button id="open-party" class="primary">Open party controls <span>↗</span></button><button id="leave" class="text-button">Leave this party</button></section>
-    <section id="start"><label for="name">Your name</label><input id="name" maxlength="24" placeholder="e.g. Alex" autocomplete="name"><button id="create" class="primary">Start a party <span>→</span></button><div class="divider"><span>OR JOIN A PARTY</span></div><label for="code">Party code</label><div class="join-row"><input id="code" maxlength="6" placeholder="ABC123" autocomplete="off"><button id="join" class="secondary">Join</button></div></section>
-    <details class="relay-settings"><summary>Connect to a relay server</summary><label for="relay-url">Relay server URL</label><div class="join-row"><input id="relay-url" placeholder="wss://your-server.example/ws" autocomplete="url"><button id="save-relay" class="secondary">Save</button></div><div class="relay-help">Use the same hosted relay URL as your friends. A local-only party works without one.</div></details>
-    <div id="message" class="message" aria-live="polite"></div>
-    <footer>Room chat and playback sync across devices when everyone uses the same relay server.</footer>
-  </main>
-  <script src="popup.js"></script>
+<main class="app">
+  <header><div class="brand-mark">✦</div><div><div class="eyebrow">TOGETHER, IN SYNC</div><h1>Watch Party</h1></div></header>
+  <p class="intro">Make movie night feel like movie night.</p>
+  <div class="services">Netflix · Prime Video · JioHotstar</div>
+  <p id="invite-info" class="notice hidden"></p>
+  <section id="active" class="active hidden">
+    <div id="connection" class="active-label" role="status">Connecting…</div>
+    <div class="room-row"><div><span class="muted">Room code</span><strong id="room-code"></strong></div><button id="copy-code" class="copy">Copy code</button></div>
+    <p id="party-info" class="muted"></p>
+    <button id="copy-invite" class="primary">Copy invite link ↗</button>
+    <button id="open-party" class="secondary wide">Open party controls</button>
+    <button id="retry" class="secondary wide">Reconnect now</button>
+    <button id="leave" class="text-button">Leave this party</button>
+  </section>
+  <section id="start">
+    <label for="name">Your name</label><input id="name" maxlength="24" placeholder="e.g. Alex" autocomplete="name">
+    <button id="create" class="primary">Start a party →</button>
+    <div class="divider"><span>OR JOIN A PARTY</span></div>
+    <label for="code">Party code or invite link</label>
+    <div class="join-row"><input id="code" placeholder="Paste an invite link or code" autocomplete="off"><button id="join" class="secondary">Join</button></div>
+  </section>
+  <details id="relay-settings" class="relay-settings"><summary>Server settings</summary>
+    <label for="relay-url">Relay server URL</label><div class="join-row"><input id="relay-url" placeholder="wss://your-server.example/" autocomplete="url"><button id="save-relay" class="secondary">Save</button></div>
+    <div class="relay-help">Hosts set up a server once. Invite links fill this in for guests.</div>
+  </details>
+  <div id="message" class="message" aria-live="polite"></div>
+  <footer>Everyone needs the extension and access to the same streaming title.</footer>
+</main>
+<script src="shared.js"></script><script src="popup.js"></script>
 </body></html>
