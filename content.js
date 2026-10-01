@@ -154,7 +154,10 @@
       render();
     });
     on('canplay', () => { if (!isHost()) { buffering = false; request({ type: 'PRESENCE', buffering }); applyState(true); } });
-    on('loadedmetadata', () => { applyState(true); if (isHost() && !view.room?.playback) publishPlayback('initial'); });
+    on('loadedmetadata', () => {
+      applyState(true);
+      if (isHost() && (!view.room?.playback || P.mediaKey(view.room.mediaUrl) !== P.mediaKey(location.href))) publishPlayback('media');
+    });
     applyState(true);
   }
   function publishPlayback(reason) {

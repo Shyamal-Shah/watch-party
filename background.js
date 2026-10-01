@@ -28,6 +28,21 @@ function view() {
 }
 async function publish() { await chrome.storage.local.set({ roomView: view() }); }
 async function saveSession() { await chrome.storage.local.set({ party, pendingChats: pending }); }
+async function followHost(joined = false) {
+  if (!party || meId === room.hostId) return;
+  const target = P.mediaUrl(room.mediaUrl);
+  const key = P.mediaKey(target);
+  if (!target || (!joined && party.followedMedia === key)) return;
+  // Remember each destination even if the service redirects to login. Subsequent
+  // playback snapshots must not interrupt sign-in or repeatedly reload the tab.
+  party.followedMedia = key;
+  try {
+    const tab = await chrome.tabs.get(party.tabId);
+    if (P.mediaKey(tab.pendingUrl || tab.url) !== key) await chrome.tabs.update(tab.id, { url: target });
+  } catch {
+    error = 'Could not follow the host’s video. Use Open host’s video in the party panel to retry.';
+  }
+}
 function teardown() {
   clearTimeout(retryTimer); clearTimeout(connectTimeout); clearInterval(heartbeat);
   const old = socket;
@@ -111,12 +126,11 @@ async function connect() {
       if (!tab) {
         const opened = await chrome.tabs.create({ url: room.mediaUrl });
         party.tabId = opened.id;
-      } else if (meId !== room.hostId && P.mediaKey(tab.url) !== P.mediaKey(room.mediaUrl)) {
-        await chrome.tabs.update(tab.id, { url: room.mediaUrl });
       }
       await saveSession();
       for (const item of pending) send({ type: 'chat', id: item.id, text: item.text });
     }
+    await followHost(packet.type === 'joined');
     // Room snapshots also acknowledge delivered chat, including after reconnect.
     pending = pending.filter(item => !room.messages.some(m => m.id === item.id && m.memberId === meId));
     await saveSession(); await publish();
@@ -177,7 +191,7 @@ async function handle(message, sender) {
     return {};
   }
   if (message.type === 'START_PARTY' && extensionPage) {
-    const relayUrl = P.relayUrl(message.relayUrl);
+    const relayUrl = P.relayUrl(message.relayUrl || P.DEFAULT_RELAY_URL);
     if (!await chrome.permissions.contains({ origins: [P.permissionOrigin(relayUrl)] })) throw new Error('Allow access to the relay server first.');
     if (!/^[A-Z0-9]{6}$/.test(message.code)) throw new Error('Enter a six character room code.');
     if (message.create && !P.mediaUrl(message.mediaUrl)) throw new Error('Open a supported video first.');
@@ -213,7 +227,10 @@ async function handle(message, sender) {
     send(message.type === 'KICK' ? { type: 'kick', id: message.id } : { type: 'settings', hostOnly: !!message.hostOnly }); return {};
   }
   if (message.type === 'OPEN_VIDEO' && party && P.mediaUrl(room?.mediaUrl)) {
-    await chrome.tabs.update(party.tabId, { url: room.mediaUrl, active: true }); return {};
+    await chrome.tabs.update(party.tabId, { url: room.mediaUrl, active: true });
+    party.followedMedia = P.mediaKey(room.mediaUrl);
+    if (error.startsWith('Could not follow the host')) error = '';
+    await saveSession(); await publish(); return {};
   }
   return {};
 }

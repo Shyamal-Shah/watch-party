@@ -167,8 +167,7 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
     await guestVideo.locator('video').evaluate(v => v.replaceWith(v.cloneNode(true)));
     await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime)).toBeGreaterThan(29);
     await hostVideo.goto('https://www.netflix.com/watch/456');
-    await expect(guestVideo.getByRole('button', { name: 'Open host’s video' })).toBeVisible();
-    await guestVideo.getByRole('button', { name: 'Open host’s video' }).click();
+    // The guest follows the host's next title without clicking a follow button.
     await expect(guestVideo).toHaveURL('https://www.netflix.com/watch/456');
     await expect(guestVideo.locator('#wp-root .status')).toContainText('Connected');
     await hostVideo.getByRole('button', { name: 'Remove', exact: true }).click();

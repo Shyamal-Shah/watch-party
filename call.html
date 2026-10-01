@@ -5,6 +5,7 @@
 <main>
   <header><span class="mark">✦</span><div><h1>Watch Party call</h1><p id="room-label">Two people. One movie night.</p></div></header>
   <p id="call-status" role="status" aria-live="polite">Join a party to start a call.</p>
+  <div id="quality" hidden><span id="quality-label">Measuring call quality…</span><small id="quality-metrics"></small></div>
   <section class="tile remote-tile" aria-label="Your friend">
     <video id="remote-video" autoplay playsinline></video>
     <div id="remote-placeholder" class="placeholder">Waiting for your friend</div>
@@ -27,6 +28,15 @@
     <button id="hangup" class="danger">Leave call</button>
   </div>
   <button id="enable-audio" class="primary" hidden>Play your friend’s audio</button>
+  <details id="device-settings">
+    <summary>Microphone, camera &amp; speakers</summary>
+    <label for="audio-device">Microphone</label><select id="audio-device"><option value="">System default</option></select>
+    <label for="video-device">Camera</label><select id="video-device"><option value="">System default</option></select>
+    <label for="output-device">Speakers</label><select id="output-device"><option value="">System default</option></select>
+    <button id="choose-output" hidden>Choose another speaker</button>
+    <p id="device-help" class="help">Device names appear after you allow access. Selecting an input keeps it off until you enable it.</p>
+    <p id="device-message" role="status" class="help"></p>
+  </details>
   <p id="call-message" role="alert"></p>
   <p class="help">Your microphone and camera stay off until you choose to enable them. Closing this window ends your call; the watch party continues.</p>
 </main>

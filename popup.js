@@ -40,7 +40,7 @@ async function start(create) {
     if (pasted) fillInvite(pasted);
     const code = create ? createCode() : $('code').value.trim().toUpperCase();
     if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error('Enter a six character code or a valid invite link.');
-    const relay = P.relayUrl($('relay-url').value.trim());
+    const relay = P.relayUrl($('relay-url').value.trim() || P.DEFAULT_RELAY_URL);
     // Keep the permission request directly inside this button's user gesture.
     const allowed = await chrome.permissions.request({ origins: [P.permissionOrigin(relay)] });
     if (!allowed) throw new Error('Allow connection to this server to join the party.');
@@ -80,10 +80,17 @@ $('save-relay').onclick = async () => {
     await chrome.storage.local.set({ relayUrl: relay }); $('relay-url').value = relay; msg('Server saved. Start or join a party.');
   } catch (e) { msg(e.message); }
 };
+$('default-relay').onclick = async () => {
+  try {
+    $('relay-url').value = P.DEFAULT_RELAY_URL;
+    await chrome.storage.local.set({ relayUrl: P.DEFAULT_RELAY_URL });
+    msg('Default server selected. Chrome may ask for access when you start or join.');
+  } catch (e) { msg(e.message); }
+};
 chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.roomView) show(changes.roomView.newValue); });
 (async () => {
   const saved = await chrome.storage.local.get(['relayUrl', 'displayName']);
-  $('relay-url').value = saved.relayUrl || ''; $('name').value = saved.displayName || '';
+  $('relay-url').value = saved.relayUrl || P.DEFAULT_RELAY_URL; $('name').value = saved.displayName || '';
   show(await request({ type: 'GET_VIEW' }));
   if (location.hash.startsWith('#invite=')) {
     try { const parsed = P.parseInvite(decodeURIComponent(location.hash.slice(8))); if (parsed) fillInvite(parsed); } catch { msg('Invalid invite link.'); }

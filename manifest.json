@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watch Party",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Watch Netflix, Prime Video, and JioHotstar in sync with friends.",
   "permissions": [
     "storage",

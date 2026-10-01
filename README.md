@@ -7,7 +7,7 @@ A Chrome extension for watching Netflix, Prime Video, and JioHotstar together, w
 1. Use Chrome 116 or later and open `chrome://extensions`.
 2. Enable **Developer mode**, choose **Load unpacked**, and select this project folder.
 3. When updating, click **Reload** on the extension and refresh your streaming tabs.
-4. Deploy the updated relay too. Version 2 uses a new room protocol; create a new party after upgrading from version 1.
+4. Voice/video calls need a version 2.1 or later relay. This 2.2 extension update works with that relay without redeployment. Version 2 uses a new room protocol; create a new party after upgrading from version 1.
 
 Each participant needs the extension and access to the same streaming title. The extension synchronizes each person's player; it does not transmit the movie.
 
@@ -25,12 +25,14 @@ The relay listens on `0.0.0.0:8080`, or the port supplied by `PORT`. `/health` r
 ## Start and invite friends
 
 1. Open a movie or episode on a supported site.
-2. Open the extension, expand **Server settings**, and save the relay URL. Allow Chrome access to that server when prompted.
+2. Open the extension. The default relay is already set to `wss://watch-party-i6o3.onrender.com/`. Allow Chrome access when prompted on starting or joining.
 3. Enter your name and choose **Start a party**.
 4. When connected, choose **Copy invite link** in the popup or player panel.
 5. Friends open that link, choose **Join party** on the streaming page, enter a name, and click **Join**. The link fills in the room and relay URL automatically. Chrome may ask them to allow access to that server.
 
 You can also paste an invite link directly into the popup. Joining by a six character code still works when the same relay is configured. Only the chosen streaming tab participates; closing that tab leaves the party.
+
+To use another relay, expand **Server settings**, enter its URL, and choose **Save**. Saved custom servers remain selected after updating. **Use default server** restores the shared server for your next party. Invite links use the server specified by the host. Local development still uses `ws://localhost:8080/`.
 
 ## Playback and room controls
 
@@ -38,7 +40,7 @@ You can also paste an invite link directly into the popup. Joining by a six char
 - The host sends playback snapshots every five seconds. Followers check for drift each second, gently adjust speed for small differences, and seek for larger differences.
 - Host buffering holds the shared timeline. Guest buffering is shown in the participant list; a recovered guest catches up to the current timeline.
 - Reloaded and replaced video players resume synchronization when their metadata is available. If Chrome blocks autoplay, click **Resume sync** in the panel.
-- When the host opens another title or episode, guests see **Open host’s video**. Click it to follow. Invite links point to the latest room title.
+- When the host's player opens another title or episode at a new URL, the guest's party tab follows automatically and sync resumes once the new player loads. This also follows the streaming service's own next-episode autoplay. The extension does not click next-episode buttons or bypass sign-in, ads, or access restrictions. **Open host’s video** remains available as a manual retry; repeated room updates do not repeatedly navigate a guest who has been redirected to sign-in. Invite links point to the latest room title.
 - **Only the host controls playback** is enabled by default. The host can uncheck it to let everyone play, pause, seek, and change speed. The relay enforces this setting.
 - The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room.
 - If the host leaves, control moves to an online participant. After an unexpected host disconnect, the relay allows 45 seconds for reconnection before transferring control.
@@ -52,6 +54,14 @@ You can also paste an invite link directly into the popup. Joining by a six char
 5. **Mute mic** and **Turn camera off** stop those capture tracks. **Mute speakers** silences incoming call audio. **Leave call** or closing the call window releases your devices while keeping the watch party active.
 
 The call window shows local and remote previews, microphone/camera status, connection errors, and a reconnect button. Leaving the party or being removed also releases your camera and microphone. During a temporary relay outage, enabled local devices remain active while the call reconnects; their status stays visible in the call window.
+
+### Devices and call quality
+
+Expand **Microphone, camera & speakers** in the call window to choose devices. Choices are saved in this Chrome profile. Changing an active input replaces its track in the current call and releases the previous device; a failed switch keeps the previous track. Choosing an input while it is off does not start capture. If an input disconnects, choose an available device or **System default**, then turn it on again.
+
+Chrome may hide device names or extra devices until you grant access. Speaker selection changes only incoming call audio; the movie keeps its own audio output. If speaker selection is unsupported, use your system sound settings. **Choose another speaker** appears when the browser supports an output permission picker. These controls use [enumerateDevices](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/enumerateDevices) and [setSinkId](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/setSinkId).
+
+The call quality indicator samples [WebRTC statistics](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/getStats) every two seconds. It shows round-trip latency, recent received packet loss and jitter where available, and combined send/receive bitrate. **Fair** means latency above 250 ms, loss above 2%, or jitter above 30 ms; **Poor** means above 500 ms, 5%, or 50 ms respectively. **Good** means the available measurements are below those thresholds. This is a local network estimate, not a measurement of your friend's listening experience or the movie's streaming quality. Missing statistics and inactive media are shown explicitly.
 
 Media uses a direct WebRTC connection when possible. The Node relay only forwards call setup messages between the two room members; it does not receive or record audio/video. Both people must opt into the call. An updated 2.1 relay is required; `/health` reports `"voiceVideo": true` and `"maxParticipants": 2`.
 

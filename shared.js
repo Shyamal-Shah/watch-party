@@ -57,7 +57,8 @@
         && Number.isFinite(room.playback.rate) && room.playback.rate >= 0.25 && room.playback.rate <= 4
         && Number.isFinite(room.playback.updatedAt) && typeof room.playback.paused === 'boolean'));
   }
-  const api = { mediaUrl, mediaKey, relayUrl, permissionOrigin, position, invite, parseInvite, validRoom };
+  const DEFAULT_RELAY_URL = 'wss://watch-party-i6o3.onrender.com/';
+  const api = { DEFAULT_RELAY_URL, mediaUrl, mediaKey, relayUrl, permissionOrigin, position, invite, parseInvite, validRoom };
   if (typeof module !== 'undefined') module.exports = api;
   else root.WatchParty = api;
 })(globalThis);
