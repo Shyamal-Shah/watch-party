@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.2.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.3.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -55,8 +55,8 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 ## Playback and room controls
 
 - Late joiners receive the latest playback position, pause state, playback speed, participant list, and up to 100 recent chat messages.
-- The host sends playback snapshots every five seconds. Followers check for drift each second, gently adjust speed for small differences, and seek for larger differences.
-- Sync waits for playable data before changing the player, spaces seek corrections at least three seconds apart, and avoids overlapping automatic play requests.
+- The host sends playback snapshots every five seconds. Followers check for drift each second and seek for larger differences. Prime Video and JioHotstar also gently adjust speed for small differences. Netflix uses discrete seeks through its player controls.
+- Sync waits for playable data before changing the player, spaces seek corrections at least three seconds apart (five seconds on Netflix), and avoids overlapping automatic control requests. A host's own playback snapshots do not drive its player.
 - Host buffering holds the shared timeline. Guest buffering is shown in the participant list; a recovered guest catches up to the current timeline.
 - Reloaded and replaced video players resume synchronization when their metadata is available. If Chrome blocks autoplay, click **Resume sync** in the panel.
 - When the host's player opens another title or episode at a new URL, the guest's party tab follows automatically and sync resumes once the new player loads. This also follows the streaming service's own next-episode autoplay. The extension does not click next-episode buttons or bypass sign-in, ads, or access restrictions. **Open host’s video** remains available as a manual retry; repeated room updates do not repeatedly navigate a guest who has been redirected to sign-in. Invite links point to the latest room title.
@@ -115,7 +115,9 @@ Chat sent during a temporary outage appears as **Waiting for delivery**. Up to 5
 
 Rooms and chat history are held in relay memory. An empty room expires after 10 minutes, and a relay restart clears rooms. In that case, the extension shows an error and the host must create a new party. Rooms are limited to two participant identities, including temporarily reconnecting participants. Removal is tied to an extension identity, not an account; a person using another browser profile can join again if they know the invite.
 
-Player control uses the site's HTML video element. Changes to streaming players, ads, regional title differences, DRM behavior, and browser autoplay restrictions may affect synchronization. Real Netflix, Prime Video, and JioHotstar playback still needs manual checks with subscribed accounts.
+Prime Video and JioHotstar use the site's HTML video element. Starting with version 2.2.3, Netflix seek, play, and pause use its internal page player through a Chrome MAIN-world content script, following the integration approach used in [asbplayer's Netflix controls](https://github.com/asbplayer/asbplayer/blob/master/extension/src/entrypoints/netflix-page.ts). Direct video-element seeks are a suspected cause of the M7375 error during party joining; the earlier tab fix alone did not change those controls. Netflix's interface is undocumented and can change. When it is unavailable, the panel reports that controls are not ready instead of attempting direct seeks. Netflix speed sync is available only if its player exposes native speed controls; otherwise match the host's speed using Netflix's own menu.
+
+If Netflix already shows M7375, leave the party, update/reload the extension, reload the Netflix page so a fresh player starts, and rejoin. Changes to streaming players, ads, regional title differences, DRM behavior, and browser autoplay restrictions may affect synchronization. Real Netflix, Prime Video, and JioHotstar playback still needs manual checks with subscribed accounts.
 
 ## Development checks
 
@@ -126,3 +128,5 @@ npm run test:browser
 ```
 
 The relay tests exercise actual WebSocket clients, permissions, reconnect identity, host transfer, message deduplication, room expiry, and invite validation. The browser tests load the extension in two separate Chromium profiles, with a generated WebM video on an intercepted streaming page. It covers invite joining, late sync, guest control enforcement, shared controls, reconnect chat, player reload/replacement, running playback, buffering, following a new title, and removal. They also use fake microphones/cameras with real WebRTC connections to verify received audio packets, video frames, both offer directions, listen-only mode, permission denial, device toggles, closing/reopening calls, reconnection, and device cleanup on removal. They do not access paid streaming content or real user devices.
+
+The Netflix control tests verify native seek values in milliseconds, watch-session selection, play/pause, optional speed support, malformed/stale commands, and unavailable APIs without direct video-element fallbacks. Browser tests simulate Netflix's page player around a real video and check that joins reuse one streaming tab and synchronization actually calls the page player across Chrome's isolated/MAIN world boundary. This simulation does not reproduce Netflix's DRM player or establish that an error on a subscribed account has been resolved.

@@ -2,6 +2,7 @@
   if (window.__watchPartyLoaded) return;
   window.__watchPartyLoaded = true;
   const P = WatchParty;
+  const controls = WatchPartyPlayer;
   let incomingInvite = P.parseInvite(location.href);
   let inviteUrl = location.href;
   let inviteDismissed = false;
@@ -9,7 +10,7 @@
   let view = null, tabId = null, player = null, playerEvents = null;
   let root, ui, panel, statusLine, note, people, chat, input, hostOnly, hostSettings, retry, follow, unlock, inviteButton;
   let suppressUntil = 0, expectedSeek = null, buffering = false, autoplayBlocked = false, correctionRate = null;
-  let lastSyncSeek = -Infinity, playPending = false;
+  let lastSyncSeek = -Infinity, applying = false, controlEpoch = 0, rateUnsupported = false, playerError = '';
   let localActionAt = 0, lastPublish = 0, lastMedia = '', lastPeople = '', lastChat = '', localError = '';
   const active = () => view?.party && view.tabId === tabId;
   const isHost = () => view?.room?.hostId === view?.meId;
@@ -68,7 +69,13 @@
     });
     retry = button('Reconnect', actions, () => { localError = ''; request({ type: 'RETRY' }); });
     follow = button('Open host’s video', actions, () => request({ type: 'OPEN_VIDEO' }));
-    unlock = button('Resume sync', actions, async () => { autoplayBlocked = false; try { await player?.play(); applyState(true); } catch { autoplayBlocked = true; } render(); });
+    unlock = button('Resume sync', actions, async () => {
+      if (!player) return;
+      autoplayBlocked = false;
+      try { await controls.apply(player, { paused: false }); playerError = ''; applyState(true); }
+      catch (error) { controlFailure(error); }
+      render();
+    });
     button('Voice / video call', actions, () => request({ type: 'OPEN_CALL' }));
     button('Leave', actions, () => request({ type: 'LEAVE' }));
     hostSettings = el('label', '', panel, 'settings');
@@ -121,9 +128,11 @@
     const count = view.room?.participants.filter(p => p.online).length || 0;
     statusLine.textContent = `${{ connected: 'Connected', connecting: 'Connecting…', reconnecting: 'Reconnecting…', error: 'Unable to join', removed: 'Removed' }[view.status] || 'Offline'} · ${count} / 2 watching${isHost() ? ' · You are the host' : ''}`;
     const different = view.room && P.mediaKey(view.room.mediaUrl) !== P.mediaKey(location.href);
-    note.textContent = view.error || localError || (!player ? 'Waiting for a video player…' : different ? 'The host is watching a different video.' : autoplayBlocked ? 'Chrome needs a click to resume playback.' : buffering ? 'Your video is buffering…' : view.room?.playback?.buffering ? 'Waiting for the host to finish buffering…' : !view.room?.playback ? 'Waiting for the host’s playback…' : view.room.hostOnly ? 'Playback follows the host.' : 'Everyone can control playback.');
+    note.textContent = view.error || localError || playerError || (!player ? 'Waiting for a video player…' : different ? 'The host is watching a different video.' : autoplayBlocked ? 'Chrome needs a click to resume playback.' : buffering ? 'Your video is buffering…' : view.room?.playback?.buffering ? 'Waiting for the host to finish buffering…' : !view.room?.playback ? 'Waiting for the host’s playback…' : view.room.hostOnly ? 'Playback follows the host.' : 'Everyone can control playback.');
+    if (controls.netflix && rateUnsupported && player && view.room?.playback && Math.abs(player.playbackRate - view.room.playback.rate) > 0.001) note.textContent += ' Choose the host’s playback speed in Netflix; automatic speed control is unavailable.';
     inviteButton.disabled = !connected || !view.room;
     retry.hidden = connected; follow.hidden = !different || isHost(); unlock.hidden = !autoplayBlocked;
+    unlock.disabled = applying;
     hostSettings.hidden = !isHost(); hostOnly.checked = view.room?.hostOnly !== false; hostOnly.disabled = !connected;
     const roster = JSON.stringify([view.room?.participants, view.room?.hostId, connected]);
     if (roster !== lastPeople) {
@@ -155,7 +164,7 @@
     if (next === player) return;
     playerEvents?.abort(); player = next;
     buffering = false; autoplayBlocked = false; expectedSeek = null;
-    lastSyncSeek = -Infinity; playPending = false;
+    lastSyncSeek = -Infinity; applying = false; controlEpoch++; rateUnsupported = false; playerError = '';
     if (!player) return;
     playerEvents = new AbortController();
     const on = (type, callback) => player.addEventListener(type, callback, { signal: playerEvents.signal });
@@ -188,36 +197,47 @@
       time: player.currentTime, paused: player.paused, rate: reason !== 'ratechange' && correctionRate !== null && Math.abs(player.playbackRate - correctionRate) < 0.001 ? view.room.playback.rate : player.playbackRate, buffering,
     } });
   }
-  function applyState(force = false) {
+  function controlFailure(error) {
+    if (error.code === 'AUTOPLAY' || error.name === 'NotAllowedError') autoplayBlocked = true;
+    else if (controls.netflix && ['NOT_READY', 'STALE'].includes(error.code)) playerError = 'Waiting for Netflix’s player controls. Start the video in Netflix if needed.';
+    else if (controls.netflix && error.code === 'UNSUPPORTED') playerError = 'Netflix’s player controls are unavailable. Reload the video to retry sync.';
+    else playerError = 'This player could not apply sync. Reload the video and try again.';
+  }
+  async function applyState(force = false) {
     const p = view?.room?.playback;
     // Metadata alone does not mean the streaming player is ready for controls.
-    if (!active() || view.status !== 'connected' || !p || !player || player.readyState < 3 || player.seeking || player.error) return;
+    if (applying || !active() || view.status !== 'connected' || !p || !player || player.readyState < 3 || player.seeking || player.error) return;
     if (P.mediaKey(view.room.mediaUrl) !== P.mediaKey(location.href)) return;
     if (!force && performance.now() - localActionAt < 1000) return;
-    // Let the host's player recover naturally from buffering; followers wait.
-    if (isHost() && p.actorId === view.meId && (buffering || p.buffering)) return;
+    // The host's own echoes must not drive its player during startup or buffering.
+    if (isHost() && p.actorId === view.meId) return;
     let target = P.position(p);
     if (Number.isFinite(player.duration)) target = Math.min(target, Math.max(0, player.duration - 0.05));
     const difference = target - player.currentTime;
     const paused = p.paused || p.buffering;
+    const changes = {};
+    const now = performance.now();
+    if (Math.abs(difference) > (paused ? 0.2 : 1.2) && now - lastSyncSeek >= (controls.netflix ? 5000 : 3000)) {
+      lastSyncSeek = now; expectedSeek = target; changes.time = target;
+    }
+    // Netflix gets discrete native seeks. Avoid repeatedly changing its speed
+    // to correct small drift, and never write its HTML video element's rate.
+    const rate = !controls.netflix && !isHost() && !paused && Math.abs(difference) > 0.2 && Math.abs(difference) <= 1.2 ? p.rate * (difference > 0 ? 1.03 : 0.97) : p.rate;
+    correctionRate = rate === p.rate ? null : rate;
+    if (!rateUnsupported && Math.abs(player.playbackRate - rate) > 0.001) changes.rate = rate;
+    if (paused && !player.paused) changes.paused = true;
+    else if (!paused && player.paused && !autoplayBlocked) changes.paused = false;
+    if (changes.time !== undefined && !autoplayBlocked) changes.paused = paused;
+    if (!Object.keys(changes).length) return;
+    const controlledPlayer = player, epoch = controlEpoch;
+    applying = true; suppressUntil = now + 1200;
     try {
-      if (Math.abs(difference) > (paused ? 0.2 : 1.2) && performance.now() - lastSyncSeek >= 3000) {
-        // Room/presence updates can arrive in bursts. Allow a seek to settle
-        // before attempting another, including when the player rejects it.
-        lastSyncSeek = performance.now();
-        suppressUntil = lastSyncSeek + 1200; expectedSeek = target; player.currentTime = target;
+      const result = await controls.apply(controlledPlayer, changes);
+      if (epoch === controlEpoch && active()) {
+        rateUnsupported = !result.rateSupported; playerError = '';
       }
-      const rate = !isHost() && !paused && Math.abs(difference) > 0.2 && Math.abs(difference) <= 1.2 ? p.rate * (difference > 0 ? 1.03 : 0.97) : p.rate;
-      correctionRate = rate === p.rate ? null : rate;
-      if (Math.abs(player.playbackRate - rate) > 0.001) { suppressUntil = performance.now() + 1200; player.playbackRate = rate; }
-      if (paused && !player.paused) { suppressUntil = performance.now() + 1200; player.pause(); }
-      else if (!paused && player.paused && !autoplayBlocked && !playPending) {
-        suppressUntil = performance.now() + 1200;
-        const playing = player; playPending = true;
-        playing.play().catch(() => { if (player === playing && active()) { autoplayBlocked = true; render(); } })
-          .finally(() => { if (player === playing) playPending = false; });
-      }
-    } catch { localError = 'This player could not apply sync. Reload the video and try again.'; }
+    } catch (error) { if (epoch === controlEpoch && active()) controlFailure(error); }
+    finally { if (epoch === controlEpoch) { applying = false; suppressUntil = performance.now() + 1200; render(); } }
   }
   function update(next) {
     const wasActive = active(); const previousHost = isHost();
@@ -226,6 +246,7 @@
     view = next;
     if (previousParty !== partyKey(view)) {
       root?.remove(); root = null; panel = null; lastPeople = ''; lastChat = ''; localError = '';
+      controlEpoch++; applying = false; playerError = ''; lastSyncSeek = -Infinity;
       inviteDismissed = false;
     }
     if (active()) {

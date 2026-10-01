@@ -13,12 +13,13 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
   const relayUrl = `ws://127.0.0.1:${relay.server.address().port}/`;
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'watch-party-e2e-'));
   const extension = path.join(temp, 'extension'); await fs.mkdir(extension);
-  const manifest = require('../extension/manifest.json');
+  const manifest = JSON.parse(await fs.readFile(path.join(__dirname, '../extension/manifest.json'), 'utf8'));
   // Pregrant the test relay; production still asks via Chrome's permission prompt.
   manifest.host_permissions = [...manifest.host_permissions, 'http://127.0.0.1/*'];
   await fs.writeFile(path.join(extension, 'manifest.json'), JSON.stringify(manifest));
-  for (const file of ['shared.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', 'extension', file), path.join(extension, file));
+  for (const file of ['shared.js', 'player-controls.js', 'netflix-bridge.js', 'background.js', 'content.js', 'content.css', 'popup.html', 'popup.js', 'popup.css', 'call.html', 'call.js', 'call.css']) await fs.copyFile(path.join(__dirname, '..', 'extension', file), path.join(extension, file));
   const video = await fs.readFile(path.join(__dirname, 'fixtures/video.webm'));
+  const netflixFixture = await fs.readFile(path.join(__dirname, 'fixtures/netflix-player.js'), 'utf8');
   const identities = ['0'.repeat(64), '1'.repeat(64)].map(value => {
     const secret = createHash('sha256').update(value + '|' + relayUrl).digest('hex');
     return { value, id: createHash('sha256').update(secret).digest('hex').slice(0, 24) };
@@ -30,7 +31,7 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
       headless: true, channel: 'chromium', args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
     });
     contexts.push(context);
-    await context.route('https://www.netflix.com/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Watch Party test player</title><body style="background:#18131e;color:white"><h1>Test movie</h1><video controls muted style="width:640px;height:360px" src="data:video/webm;base64,${video.toString('base64')}"></video></body>` }));
+    await context.route('https://www.netflix.com/**', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Watch Party test player</title><body style="background:#18131e;color:white"><h1>Test movie</h1><video controls muted style="width:640px;height:360px" src="data:video/webm;base64,${video.toString('base64')}"></video><script>${netflixFixture}</script></body>` }));
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const id = new URL(worker.url()).host;
     const popup = await context.newPage(); await popup.goto(`chrome-extension://${id}/popup.html`);
@@ -59,16 +60,25 @@ for (const hostOffers of [true, false]) test(`two Chrome profiles: sync and voic
     const joinPage = await joinPagePromise; await joinPage.waitForLoadState();
     await expect(joinPage.locator('#relay-url')).toHaveValue(relayUrl);
     await joinPage.locator('#name').fill('Guest');
+    // Netflix can expose its player API after the video appears. A join must
+    // wait without using a direct video seek, then recover when it is ready.
+    await invite.evaluate(() => { window.savedNetflix = window.netflix; window.netflix = undefined; });
     await joinPage.getByRole('button', { name: 'Join', exact: true }).click();
     // Joining binds the original invite/player tab, preserving its loaded video.
     const guestVideo = invite;
     await expect(guestVideo.locator('#wp-root .status')).toContainText('Connected');
-    await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime)).toBeGreaterThan(16);
+    await expect(guestVideo.locator('#wp-root .note')).toContainText('Waiting for Netflix’s player controls');
+    expect(await guestVideo.evaluate(() => window.nativeCalls.length)).toBe(0);
+    expect(await guestVideo.locator('video').evaluate(v => v.currentTime)).toBe(0);
+    await guestVideo.evaluate(() => { window.netflix = window.savedNetflix; });
+    await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime), { timeout: 8000 }).toBeGreaterThan(16);
+    expect(await guestVideo.evaluate(() => window.nativeCalls.some(call => call[0] === 'seek' && call[1] >= 16000))).toBe(true);
+    expect(guest.context.pages().filter(page => page.url().startsWith('https://www.netflix.com/')).length).toBe(1);
     await expect(guestVideo.locator('#wp-root .people')).toContainText('Host');
     await expect(hostVideo.locator('#wp-root .people')).toContainText('Guest');
     // Guests cannot override a host-only room; local seeks return to its timeline.
     await guestVideo.locator('video').evaluate(v => { v.currentTime = 1; });
-    await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime)).toBeGreaterThan(16);
+    await expect.poll(() => guestVideo.locator('video').evaluate(v => v.currentTime), { timeout: 8000 }).toBeGreaterThan(16);
     // Shared control is enforced by the relay, and can be changed by the host.
     await hostVideo.locator('#wp-root input[type=checkbox]').uncheck();
     await expect(guestVideo.locator('#wp-root .note')).toContainText('Everyone can control');

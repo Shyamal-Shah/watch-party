@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watch Party",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Watch Netflix, Prime Video, and JioHotstar in sync with friends.",
   "permissions": [
     "storage",
@@ -28,6 +28,12 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://www.netflix.com/*"],
+      "js": ["netflix-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "https://www.netflix.com/*",
         "https://www.primevideo.com/*",
@@ -37,6 +43,7 @@
       ],
       "js": [
         "shared.js",
+        "player-controls.js",
         "content.js"
       ],
       "css": [

@@ -14,6 +14,7 @@ SOURCE = ROOT / "extension"
 FILES = (
     "manifest.json", "shared.js", "background.js",
     "content.js", "content.css",
+    "netflix-bridge.js", "player-controls.js",
     "popup.html", "popup.js", "popup.css",
     "call.html", "call.js", "call.css", "INSTALL.txt",
 )
