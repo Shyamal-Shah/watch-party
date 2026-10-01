@@ -29,7 +29,7 @@
   }
   function position(state, now = Date.now()) {
     if (!state) return 0;
-    const elapsed = state.paused || state.buffering ? 0 : Math.max(0, now - state.updatedAt) / 1000;
+    const elapsed = state.paused || state.buffering || state.ended ? 0 : Math.max(0, now - state.updatedAt) / 1000;
     return Math.max(0, state.time + elapsed * state.rate);
   }
   function invite(url, code, relay) {
@@ -53,9 +53,20 @@
       && room.participants.every(m => m && typeof m.id === 'string' && typeof m.name === 'string' && typeof m.online === 'boolean')
       && Array.isArray(room.messages) && room.messages.length <= 100
       && room.messages.every(m => m && typeof m.id === 'string' && typeof m.memberId === 'string' && typeof m.name === 'string' && typeof m.text === 'string')
+      && (room.activities === undefined || (Array.isArray(room.activities) && room.activities.length <= 100 && room.activities.every(validActivity)))
       && (room.playback === null || (Number.isFinite(room.playback?.time) && room.playback.time >= 0
         && Number.isFinite(room.playback.rate) && room.playback.rate >= 0.25 && room.playback.rate <= 4
         && Number.isFinite(room.playback.updatedAt) && typeof room.playback.paused === 'boolean'));
+  }
+  function validActivity(item) {
+    return !!item && item.kind === 'activity' && typeof item.id === 'string' && typeof item.memberId === 'string'
+      && typeof item.name === 'string' && ['play', 'pause', 'forward', 'rewind', 'rate', 'episode', 'next-episode', 'ended'].includes(item.action)
+      && Number.isFinite(item.at) && item.at >= 0 && item.at <= 8.64e15
+      && Number.isFinite(item.time) && item.time >= 0 && !!mediaUrl(item.mediaUrl)
+      && (item.mediaTitle === undefined || typeof item.mediaTitle === 'string')
+      && (!['forward', 'rewind', 'episode', 'next-episode'].includes(item.action) || (Number.isFinite(item.fromTime) && item.fromTime >= 0))
+      && (item.action !== 'rate' || (Number.isFinite(item.rate) && item.rate >= 0.25 && item.rate <= 4))
+      && (item.previousMediaUrl === undefined || !!mediaUrl(item.previousMediaUrl));
   }
   // Track only messages still available in the relay's recent history. The
   // first snapshot is a baseline; repeated snapshots and our own texts don't

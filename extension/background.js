@@ -251,14 +251,15 @@ async function handle(message, sender) {
     const text = String(message.text || '').trim().slice(0, 500);
     if (!text) return {};
     if (pending.length >= 50) throw new Error('50 messages are waiting. Reconnect before sending more.');
-    const item = { id: crypto.randomUUID(), text, name: party.name };
+    const item = { id: crypto.randomUUID(), text, name: party.name, queuedAt: Date.now() };
     pending.push(item); await saveSession(); await publish();
     if (status === 'connected') send({ type: 'chat', id: item.id, text });
     return {};
   }
   if (message.type === 'PLAYBACK' && bound && status === 'connected') {
     if (room?.hostOnly && meId !== room.hostId) return {};
-    send({ type: 'playback', playback: message.playback, reason: message.reason, revision: message.revision, mediaUrl: P.mediaUrl(message.mediaUrl) });
+    send({ type: 'playback', playback: message.playback, reason: message.reason, revision: message.revision,
+      mediaUrl: P.mediaUrl(message.mediaUrl), mediaTitle: message.mediaTitle, seekFrom: message.seekFrom });
     return {};
   }
   if (message.type === 'PRESENCE' && bound && status === 'connected') { send({ type: 'presence', buffering: !!message.buffering }); return {}; }

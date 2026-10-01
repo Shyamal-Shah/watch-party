@@ -7,7 +7,7 @@ A Chrome extension for watching Netflix, Prime Video, and JioHotstar together, w
 1. Use Chrome 116 or later and open `chrome://extensions`.
 2. Enable **Developer mode**, choose **Load unpacked**, and select this project's **extension/** folder (the folder containing `manifest.json`).
 3. When updating, click **Reload** on the extension and refresh your streaming tabs.
-4. Voice/video calls need a version 2.1 or later relay. This 2.2 extension update works with that relay without redeployment. Version 2 uses a new room protocol; create a new party after upgrading from version 1.
+4. Voice/video calls need a version 2.1 or later relay. The playback activity log in version 2.2.6 requires updating the relay as well as the extension. Version 2 uses a new room protocol; create a new party after upgrading from version 1.
 
 Each participant needs the extension and access to the same streaming title. The extension synchronizes each person's player; it does not transmit the movie.
 
@@ -21,7 +21,7 @@ The `extension/` folder contains the complete Chrome extension. You can zip that
 npm run package:extension
 ```
 
-The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.5.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
+The packaging command requires Python 3 available as `python3` and uses its standard library; no `npm install` is needed for packaging. Alternatively run `python3 scripts/package-extension.py` (on Windows, `py -3 scripts/package-extension.py`). It creates **`dist/watch-party-extension-v2.2.6.zip`**, with the version taken from `extension/manifest.json`. Generated archives are ignored by Git.
 
 Send that ZIP to your friend. They extract it into a permanent folder, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`. This follows Chrome's [unpacked extension installation instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked). The ZIP includes `INSTALL.txt`; recipients do not need Node.js, Python, or the relay source. For updates, extract into the same folder, reload the extension, and refresh streaming tabs.
 
@@ -54,7 +54,7 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 
 ## Playback and room controls
 
-- Late joiners receive the latest playback position, pause state, playback speed, participant list, and up to 100 recent chat messages.
+- Late joiners receive the latest playback position, pause state, playback speed, participant list, up to 100 recent chat messages, and up to 100 playback activity entries on the updated relay.
 - The host sends playback snapshots every five seconds. Followers check for drift each second and seek for larger differences. Prime Video and JioHotstar also gently adjust speed for small differences. Netflix uses discrete seeks through its player controls.
 - Sync waits for playable data before changing the player, spaces seek corrections at least three seconds apart (five seconds on Netflix), and avoids overlapping automatic control requests. A host's own playback snapshots do not drive its player.
 - Host buffering holds the shared timeline. Guest buffering is shown in the participant list; a recovered guest catches up to the current timeline.
@@ -63,6 +63,26 @@ To use another relay, expand **Server settings**, enter its URL, and choose **Sa
 - **Only the host controls playback** is enabled by default. The host can uncheck it to let everyone play, pause, seek, and change speed. The relay enforces this setting.
 - The participant list shows the host, reconnecting members, and buffering status. The host can remove another participant. That extension identity is blocked from rejoining the same room, but can join a new room with a different code. Removal notices apply to the original party tab; a fresh invite to another room remains joinable. Version 2.2.1 fixes stale removal notices hiding new invitations. After updating, reload the extension and refresh streaming tabs.
 - If the host leaves, control moves to an online participant. After an unexpected host disconnect, the relay allows 45 seconds for reconnection before transferring control.
+
+## Playback activity in chat
+
+Version 2.2.6 adds activity entries with icons and action tags to the party chat, interleaved with text messages in the relay's event order. Entries include the participant's name, the video position, and a clock timestamp with seconds. Hover over a timestamp for the full date, time, and local time zone. Text messages also show timestamps; pending messages show the time they were queued until delivered.
+
+| Action | Example |
+| --- | --- |
+| Play / pause | Alex paused at **12:43** |
+| Skip / forward | Alex skipped forward **00:30 · 12:43 → 13:13** |
+| Rewind | Alex rewound **00:10 · 13:13 → 13:03** |
+| Speed | Alex changed speed to **1.5×** at **13:03** |
+| Episode / title change | Alex changed episode / video · **47:01 → 00:00** |
+| Next episode after finishing | Alex started the next episode / video · **48:22 → 00:00** |
+| End of video | Alex finished the video at **48:22** |
+
+Episode/title changes are detected when the host opens a different streaming URL. A transition after the previous player reports its end is tagged **Next episode / video**; other transitions are tagged **Episode / video**. The page title appears when available, with source/destination URLs available on hover. This does not infer episode numbers or detect title changes that keep the same URL. Forward and rewind entries cover seeks of at least half a second, including a service's skip-intro button when it emits a seek event.
+
+The relay records accepted controls with the sender's identity and server time. Automatic sync corrections, periodic playback updates, buffering snapshots, and reconnection snapshots do not create playback-control entries. Activity entries are kept separately from the last 100 text messages, so they do not consume text history or increase unread-text badges. Both recent histories are restored on reconnect and available to late joiners; restarting the relay clears them.
+
+**Deploy this feature:** push the updated repository and redeploy the Render relay, then update/reload the extension and refresh streaming tabs for both people. Start a fresh party after the relay restarts. The updated relay's `/health` response includes `"playbackActivity": true`. Older relays continue to support text chat and synchronization but do not supply activity history.
 
 ## Chat notifications
 

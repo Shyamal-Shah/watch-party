@@ -1,6 +1,6 @@
 {
   "name": "watch-party-relay",
-  "version": "2.2.5",
+  "version": "2.2.6",
   "private": true,
   "description": "WebSocket relay for the Watch Party Chrome extension",
   "scripts": {

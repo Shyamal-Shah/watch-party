@@ -1,5 +1,5 @@
 const http = require('node:http');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const P = require('./extension/shared');
 const { readIceConfig } = require('./rtc-config');
@@ -8,15 +8,15 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
   const rooms = new Map();
   const server = http.createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    response.end(JSON.stringify({ ok: true, service: 'watch-party-relay', protocol: 2, maxParticipants: 2, voiceVideo: true }));
+    response.end(JSON.stringify({ ok: true, service: 'watch-party-relay', protocol: 2, maxParticipants: 2, voiceVideo: true, playbackActivity: true }));
   });
   const wss = new WebSocketServer({ server, maxPayload: 65_536 });
   const send = (socket, packet) => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(packet)); };
   function snapshot(room) {
     return {
-      capabilities: { voiceVideo: true, maxParticipants: 2 },
+      capabilities: { voiceVideo: true, maxParticipants: 2, playbackActivity: true },
       code: room.code, hostId: room.hostId, hostOnly: room.hostOnly, revision: room.revision,
-      mediaUrl: room.mediaUrl, playback: room.playback, messages: room.messages,
+      mediaUrl: room.mediaUrl, playback: room.playback, messages: room.messages, activities: room.activities,
       participants: [...room.members.values()].filter(m => !room.banned.has(m.id)).map(m => ({
         id: m.id, name: m.name, online: !!m.socket, buffering: m.buffering, call: m.call || null,
       })),
@@ -25,6 +25,36 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
   function publish(room) {
     const packet = { type: 'room', room: snapshot(room), serverTime: Date.now() };
     for (const member of room.members.values()) send(member.socket, packet);
+  }
+  function recordPlayback(room, member, packet, previous, previousUrl, previousTitle, now) {
+    const p = room.playback;
+    const changedVideo = P.mediaKey(previousUrl) !== P.mediaKey(room.mediaUrl);
+    const previousTime = previous ? P.position(previous, now) : p.time;
+    let action, fromTime;
+    if (changedVideo) {
+      action = previous?.ended ? 'next-episode' : 'episode';
+      fromTime = previousTime;
+    } else if (p.ended && !previous?.ended && ['ended', 'pause'].includes(packet.reason)) {
+      // Browsers may emit pause before ended at the end of a title.
+      action = 'ended';
+    } else if (packet.reason === 'seeked') {
+      fromTime = Number.isFinite(packet.seekFrom) && packet.seekFrom >= 0 ? packet.seekFrom : previousTime;
+      const delta = p.time - fromTime;
+      if (Math.abs(delta) >= 0.5) action = delta > 0 ? 'forward' : 'rewind';
+    } else if (packet.reason === 'play' && !p.paused && (!previous || previous.paused)) action = 'play';
+    else if (packet.reason === 'pause' && p.paused && !p.ended && (!previous || !previous.paused)) action = 'pause';
+    else if (packet.reason === 'ratechange' && (!previous || previous.rate !== p.rate)) action = 'rate';
+    if (!action) return;
+    // Only accepted playback controls create activity. Heartbeats, buffering,
+    // reconnection snapshots and ordinary sync corrections don't fill the log.
+    const activity = { id: `activity-${randomUUID()}`, kind: 'activity', action,
+      memberId: member.id, name: member.name, at: now, time: p.time,
+      mediaUrl: room.mediaUrl, mediaTitle: room.mediaTitle, revision: room.revision, sequence: ++room.sequence };
+    if (fromTime !== undefined) activity.fromTime = fromTime;
+    if (action === 'rate') activity.rate = p.rate;
+    if (changedVideo) { activity.previousMediaUrl = previousUrl; activity.previousMediaTitle = previousTitle; }
+    room.activities.push(activity);
+    room.activities = room.activities.slice(-100);
   }
   function electHost(room) {
     const host = room.members.get(room.hostId);
@@ -70,7 +100,7 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
           const url = P.mediaUrl(packet.mediaUrl);
           if (!url) return error('Open a supported video to create a party.', true);
           room ||= { code: packet.code, hostId: id, hostOnly: true, revision: 0, mediaUrl: url,
-            playback: null, members: new Map(), banned: new Set(), messages: [], seen: new Set(), touchedAt: Date.now() };
+            playback: null, mediaTitle: '', members: new Map(), banned: new Set(), messages: [], activities: [], sequence: 0, seen: new Set(), touchedAt: Date.now() };
           rooms.set(room.code, room);
         }
         if (!room) return error('Room not found or expired. Ask the host to create a new party.', true);
@@ -150,7 +180,7 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
         if (!room.seen.has(key)) {
           room.seen.add(key);
           if (room.seen.size > 1000) room.seen.delete(room.seen.values().next().value);
-          room.messages.push({ id: packet.id, memberId: member.id, name: member.name, text: packet.text.trim().slice(0, 500), at: Date.now() });
+          room.messages.push({ id: packet.id, memberId: member.id, name: member.name, text: packet.text.trim().slice(0, 500), at: Date.now(), sequence: ++room.sequence });
           room.messages = room.messages.slice(-100);
           publish(room);
         }
@@ -164,9 +194,16 @@ function createRelay({ roomTtl = 10 * 60_000, hostGrace = 45_000, sweepInterval 
         if (!p || !Number.isFinite(p.time) || p.time < 0 || !Number.isFinite(p.rate) || p.rate < 0.25 || p.rate > 4 || typeof p.paused !== 'boolean') return;
         const url = P.mediaUrl(packet.mediaUrl);
         if (!url || (!host && P.mediaKey(url) !== P.mediaKey(room.mediaUrl))) return error('Open the host’s video before controlling playback.');
-        if (host) room.mediaUrl = url;
+        const previous = room.playback, previousUrl = room.mediaUrl, previousTitle = room.mediaTitle;
+        const now = Date.now();
+        if (host) {
+          if (P.mediaKey(url) !== P.mediaKey(previousUrl)) room.mediaTitle = '';
+          room.mediaUrl = url;
+          if (typeof packet.mediaTitle === 'string' && packet.mediaTitle.trim()) room.mediaTitle = packet.mediaTitle.trim().slice(0, 180);
+        }
         room.revision++;
-        room.playback = { time: p.time, paused: p.paused, rate: p.rate, buffering: host && Boolean(p.buffering), updatedAt: Date.now(), actorId: member.id };
+        room.playback = { time: p.time, paused: p.paused, rate: p.rate, buffering: host && Boolean(p.buffering), ended: p.ended === true, updatedAt: now, actorId: member.id };
+        recordPlayback(room, member, packet, previous, previousUrl, previousTitle, now);
         publish(room);
       }
     });

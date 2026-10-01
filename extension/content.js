@@ -16,6 +16,14 @@
   const active = () => view?.party && view.tabId === tabId;
   const isHost = () => view?.room?.hostId === view?.meId;
   const canControl = () => isHost() || view?.room?.hostOnly === false;
+  const clockFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'long' });
+  const activityLabels = { play: 'Played', pause: 'Paused', forward: 'Skipped forward', rewind: 'Rewound', rate: 'Speed', episode: 'Episode / video', 'next-episode': 'Next episode / video', ended: 'Finished' };
+  const activityIcons = {
+    play: 'm8 4 12 8-12 8Z', pause: 'M8 4v16M16 4v16', forward: 'm3 5 8 7-8 7Zm10 0 8 7-8 7Z',
+    rewind: 'm21 5-8 7 8 7Zm-10 0-8 7 8 7Z', rate: 'M4 19a9 9 0 1 1 16 0M12 13l5-6M7 19h10',
+    episode: 'm5 4 12 8-12 8ZM20 4v16', 'next-episode': 'm5 4 12 8-12 8ZM20 4v16', ended: 'm4 12 5 5L20 6',
+  };
   async function request(message) {
     try {
       const result = await chrome.runtime.sendMessage(message);
@@ -33,6 +41,43 @@
   function button(text, parent, action) {
     const b = el('button', text, parent); b.type = 'button'; b.onclick = action; return b;
   }
+  function videoTime(value) {
+    const seconds = Math.max(0, Math.floor(value));
+    const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
+    return `${hours ? `${hours}:` : ''}${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+  function timestamp(at, parent, pending = false) {
+    const date = new Date(at);
+    if (!Number.isFinite(at) || !Number.isFinite(date.getTime())) return;
+    const node = el('time', clockFormat.format(date), parent, 'timestamp');
+    node.dateTime = date.toISOString();
+    node.title = `${pending ? 'Queued' : 'Received by relay'} · ${dateFormat.format(date)}`;
+    node.setAttribute('aria-label', node.title);
+  }
+  function activityLine(activity) {
+    const line = el('div', '', chat, 'line activity-line'); line.dataset.activity = activity.action;
+    const meta = el('div', '', line, 'activity-meta');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('class', 'activity-icon'); icon.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', activityIcons[activity.action]); icon.append(path); meta.append(icon);
+    el('span', activityLabels[activity.action], meta, 'activity-tag'); timestamp(activity.at, meta);
+    const body = el('div', '', line); el('b', activity.name, body);
+    const position = videoTime(activity.time);
+    let text;
+    if (activity.action === 'forward' || activity.action === 'rewind') {
+      const duration = videoTime(Math.round(Math.abs(activity.time - activity.fromTime)));
+      text = ` ${activity.action === 'forward' ? 'skipped forward' : 'rewound'} ${duration} · ${videoTime(activity.fromTime)} → ${position}`;
+    } else if (activity.action === 'rate') text = ` changed speed to ${activity.rate}× at ${position}`;
+    else if (activity.action === 'episode' || activity.action === 'next-episode') text = ` ${activity.action === 'next-episode' ? 'started the next episode / video' : 'changed episode / video'} · ${videoTime(activity.fromTime)} → ${position}`;
+    else text = ` ${activity.action === 'play' ? 'played' : activity.action === 'pause' ? 'paused' : 'finished the video'} at ${position}`;
+    body.append(document.createTextNode(text));
+    line.title = activity.mediaUrl;
+    if (activity.action === 'episode' || activity.action === 'next-episode') {
+      const title = el('small', activity.mediaTitle || new URL(activity.mediaUrl).pathname, line, 'activity-title');
+      title.title = `${activity.previousMediaTitle || activity.previousMediaUrl} → ${activity.mediaTitle || activity.mediaUrl}`;
+    }
+  }
   function mount() {
     if (root || !document.documentElement) return;
     root = document.createElement('div'); root.id = 'wp-root';
@@ -43,6 +88,7 @@
     `;
     style.textContent += `
       .toggle{position:relative}.unread-badge{position:absolute;top:-6px;right:-6px;min-width:23px;height:23px;padding:0 5px;border:2px solid #17131b;border-radius:999px;background:#ff668e;color:#17131b;font-size:11px;line-height:19px;font-weight:700;text-align:center;pointer-events:none}
+      .message-meta,.activity-meta{display:flex;align-items:center;gap:6px;min-width:0}.message-meta b{min-width:0;overflow-wrap:anywhere}.timestamp{margin-left:auto;flex-shrink:0;color:#b3a3b9;font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}.line{margin:10px 0}.activity-line{padding:9px 10px;border:1px solid #473445;border-radius:9px;background:#261d29;color:#d5c7dd;font-size:11px;line-height:1.6}.activity-line b{color:#f2d3e4}.activity-meta{margin-bottom:4px}.activity-icon{width:14px;height:14px;flex-shrink:0;fill:none;stroke:#ed92bc;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.activity-tag{font-size:9px;color:#edb0cc;font-weight:700}.activity-title{display:block;margin-top:4px;color:#b7a7c0;overflow-wrap:anywhere}
     `;
     root.addEventListener('keydown', event => event.stopPropagation());
     document.documentElement.append(root);
@@ -185,14 +231,19 @@
         }
       }
     }
-    const history = JSON.stringify([view.room?.messages, view.pending]);
+    const history = JSON.stringify([view.room?.messages, view.room?.activities, view.pending]);
     if (lastChat !== history) {
       lastChat = history;
       const stick = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
       chat.replaceChildren();
-      for (const message of [...(view.room?.messages || []), ...(view.pending || []).map(m => ({ ...m, pending: true }))]) {
+      const entries = [...(view.room?.messages || []), ...(view.room?.activities || [])].sort((a, b) =>
+        Number.isSafeInteger(a.sequence) && Number.isSafeInteger(b.sequence) ? a.sequence - b.sequence : (a.at || 0) - (b.at || 0));
+      for (const message of [...entries, ...(view.pending || []).map(m => ({ ...m, at: m.queuedAt, pending: true }))]) {
+        if (message.kind === 'activity') { activityLine(message); continue; }
         const line = el('div', '', chat, `line${message.pending ? ' pending' : ''}`);
-        el('b', `${message.name}: `, line); line.append(document.createTextNode(message.text));
+        const meta = el('div', '', line, 'message-meta');
+        el('b', message.name, meta); timestamp(message.at, meta, message.pending);
+        el('div', message.text, line);
         if (message.pending) el('small', ' · Waiting for delivery', line);
       }
       if (stick) chat.scrollTop = chat.scrollHeight;
@@ -208,13 +259,26 @@
     if (!player) return;
     playerEvents = new AbortController();
     const on = (type, callback) => player.addEventListener(type, callback, { signal: playerEvents.signal });
+    let observedTime = player.currentTime, observedAt = performance.now(), observedPaused = player.paused, observedRate = player.playbackRate;
+    let seekFrom = null;
+    const observe = () => { observedTime = player.currentTime; observedAt = performance.now(); observedPaused = player.paused; observedRate = player.playbackRate; };
+    on('timeupdate', () => { if (!player.seeking && seekFrom === null) observe(); });
+    on('seeking', () => {
+      if (seekFrom !== null) return;
+      seekFrom = observedTime + (observedPaused || buffering ? 0 : Math.max(0, performance.now() - observedAt) / 1000 * observedRate);
+      if (Number.isFinite(player.duration)) seekFrom = Math.min(seekFrom, player.duration);
+    });
     for (const type of ['play', 'pause', 'seeked', 'ratechange']) on(type, () => {
+      const origin = type === 'seeked' ? seekFrom : undefined;
+      if (type === 'seeked') seekFrom = null;
+      if (!player.seeking) observe();
       if (type === 'seeked' && expectedSeek !== null && Math.abs(player.currentTime - expectedSeek) < 1) { expectedSeek = null; return; }
       if (performance.now() < suppressUntil || !active()) return;
       if (!canControl()) { applyState(true); return; }
       localActionAt = performance.now();
-      publishPlayback(type);
+      publishPlayback(type, origin);
     });
+    on('ended', () => { observe(); if (active() && canControl() && performance.now() >= suppressUntil) publishPlayback('ended'); });
     on('waiting', () => { buffering = true; request({ type: 'PRESENCE', buffering }); if (isHost()) publishPlayback('buffering'); render(); });
     on('playing', () => {
       const wasBuffering = buffering; buffering = false; autoplayBlocked = false;
@@ -229,12 +293,12 @@
     });
     applyState(true);
   }
-  function publishPlayback(reason) {
+  function publishPlayback(reason, seekFrom) {
     if (!active() || !player || player.readyState < 1 || view.status !== 'connected' || !canControl()) return;
     if (reason === 'tick' && (!isHost() || performance.now() < suppressUntil)) return;
     lastPublish = Date.now();
-    request({ type: 'PLAYBACK', reason, revision: view.room?.revision, mediaUrl: P.mediaUrl(location.href), playback: {
-      time: player.currentTime, paused: player.paused, rate: reason !== 'ratechange' && correctionRate !== null && Math.abs(player.playbackRate - correctionRate) < 0.001 ? view.room.playback.rate : player.playbackRate, buffering,
+    request({ type: 'PLAYBACK', reason, seekFrom, revision: view.room?.revision, mediaUrl: P.mediaUrl(location.href), mediaTitle: document.title.trim().slice(0, 180), playback: {
+      time: player.currentTime, paused: player.paused, rate: reason !== 'ratechange' && correctionRate !== null && Math.abs(player.playbackRate - correctionRate) < 0.001 ? view.room.playback.rate : player.playbackRate, buffering, ended: player.ended,
     } });
   }
   function controlFailure(error) {
@@ -254,7 +318,7 @@
     let target = P.position(p);
     if (Number.isFinite(player.duration)) target = Math.min(target, Math.max(0, player.duration - 0.05));
     const difference = target - player.currentTime;
-    const paused = p.paused || p.buffering;
+    const paused = p.paused || p.buffering || p.ended;
     const changes = {};
     const now = performance.now();
     if (Math.abs(difference) > (paused ? 0.2 : 1.2) && now - lastSyncSeek >= (controls.netflix ? 5000 : 3000)) {
